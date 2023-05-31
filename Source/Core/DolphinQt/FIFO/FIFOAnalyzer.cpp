@@ -46,6 +46,16 @@ constexpr int PART_END_ROLE = Qt::UserRole + 2;
 // Analyze initial viewport and projection matrix
 constexpr int LAYER_ROLE = Qt::UserRole + 3;
 constexpr int EFBCOPY_ROLE = Qt::UserRole + 4;
+constexpr int TYPE_ROLE = Qt::UserRole + 5;
+
+constexpr int TYPE_WHOLE = 1;
+constexpr int TYPE_FRAME = 2;
+constexpr int TYPE_XFBCOPY = 3;
+constexpr int TYPE_INHERITED_LAYER = 4;
+constexpr int TYPE_LAYER = 5;
+constexpr int TYPE_EFBCOPY = 6;
+constexpr int TYPE_OBJECT = 7;
+
 
 QString primitive_names[] = {QStringLiteral("Quads"),        QStringLiteral("Quads_2"),
                              QStringLiteral("Triangles"),    QStringLiteral("Triangle Strip"),
@@ -154,7 +164,7 @@ public:
       break;
     }
 
-    text += QStringLiteral("%1, loader%2  ").arg(s).arg(vat);
+    text += QStringLiteral("%1 ").arg(s);
   }
 
   OPCODE_CALLBACK(void OnDisplayList(u32 address, u32 size))
@@ -628,21 +638,27 @@ void FIFOAnalyzer::UpdateTree()
 
   if (!FifoPlayer::GetInstance().IsPlaying())
   {
-    m_tree_widget->addTopLevelItem(new QTreeWidgetItem({tr("No recording loaded.")}));
+    auto* recording_item = new QTreeWidgetItem({tr("No recording loaded.")});
+    recording_item->setData(0, TYPE_ROLE, TYPE_WHOLE);
+    m_tree_widget->addTopLevelItem(recording_item);
     return;
   }
 
   auto* recording_item = new QTreeWidgetItem({tr("Recording")});
   QPalette blue_palette, green_palette, red_palette;
   QColor color;
+  // projection/viewport changes will be blue
   color.setRgb(0, 80, 255);
   blue_palette.setColor(QPalette::Text, color);
+  // scissor changes without a projection/viewport change will be green
   color.setRgb(200, 0, 0);
   red_palette.setColor(QPalette::Text, color);
+  // all kinds of EFB copies (EFB copies/XFB copies/frames) will be red
   color.setRgb(10, 180, 0);
   green_palette.setColor(QPalette::Text, color);
 
   m_tree_widget->addTopLevelItem(recording_item);
+  recording_item->setData(0, TYPE_ROLE, TYPE_WHOLE);
 
   auto* file = FifoPlayer::GetInstance().GetFile();
 
@@ -663,6 +679,7 @@ void FIFOAnalyzer::UpdateTree()
   for (u32 frame = 0; frame < frame_count; frame++)
   {
     auto* frame_item = new QTreeWidgetItem({tr("Frame %1").arg(frame)});
+    frame_item->setData(0, TYPE_ROLE, TYPE_FRAME);
     frame_item->setData(0, FRAME_ROLE, frame);
     frame_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
 
@@ -678,10 +695,10 @@ void FIFOAnalyzer::UpdateTree()
 
     for (u32 part_nr = 0; part_nr < frame_info.parts.size(); part_nr++)
     {
-      // Projection and viewport inherited from previous frame
+      // add projection and viewport inherited from previous frame as layer 0
       if (part_nr == 0)
       {
-        QString s = QStringLiteral("%1: %2").arg(layer).arg(DescribeLayer(true, true, true));
+        QString s = QStringLiteral("inherited: %1").arg(DescribeLayer(true, true, true));
         auto* layer_item = new QTreeWidgetItem({s});
         layer_item->setData(0, FRAME_ROLE, frame);
         layer_item->setData(0, LAYER_ROLE, layer);
@@ -702,6 +719,7 @@ void FIFOAnalyzer::UpdateTree()
                     &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied, &obj_desc);
         object_item =
             new QTreeWidgetItem({tr("Object %1: %2").arg(part_type_nr).arg(obj_desc)});
+        object_item->setData(0, TYPE_ROLE, TYPE_OBJECT);
         if (efb_copied)
         {
           QString efb_copy = DescribeEFBCopy();
@@ -737,6 +755,7 @@ void FIFOAnalyzer::UpdateTree()
           QString s = QStringLiteral("%1: %2").arg(layer).arg(
               DescribeLayer(viewport_set, scissor_set, projection_set));
           auto* layer_item = new QTreeWidgetItem({s});
+          layer_item->setData(0, TYPE_ROLE, TYPE_LAYER);
           layer_item->setData(0, FRAME_ROLE, frame);
           layer_item->setData(0, LAYER_ROLE, layer);
           if (viewport_set || projection_set)
@@ -744,28 +763,7 @@ void FIFOAnalyzer::UpdateTree()
           else
             layer_item->setData(0, Qt::ForegroundRole, green_palette.color(QPalette::Text));
           QTreeWidgetItem* parent = frame_item;
-          int first = parent->childCount() - 1;
-          QTreeWidgetItem* first_item = nullptr;
-          while (first >= 0)
-          {
-            first_item = parent->child(first);
-            if (!first_item->data(0, EFBCOPY_ROLE).isNull())
-              break;
-            if (!first_item->data(0, LAYER_ROLE).isNull())
-              break;
-            first--;
-          }
-          first++;
-          if (first_item && first_item->data(0, EFBCOPY_ROLE).isNull())
-          {
-            while (first < parent->childCount())
-            {
-              first_item->addChild(parent->takeChild(first));
-            }
-            // everything inside a layer can still be seen
-            // so reflect that in our tree too
-            first_item->setExpanded(true);
-          }
+          FoldLayer(parent);
           parent->addChild(layer_item);
           layer++;
         }
@@ -778,6 +776,7 @@ void FIFOAnalyzer::UpdateTree()
         QString efb_copy = DescribeEFBCopy();
         QString s = QStringLiteral("EFB Copy %1: %2").arg(efbcopy_count).arg(efb_copy);
         auto* layer_item = new QTreeWidgetItem({s});
+        layer_item->setData(0, TYPE_ROLE, TYPE_EFBCOPY);
         layer_item->setData(0, FRAME_ROLE, frame);
         layer_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
         layer_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
@@ -789,8 +788,9 @@ void FIFOAnalyzer::UpdateTree()
         }
         else
         {
+          FoldLayer(parent);
           int first = parent->childCount() - 1;
-          while (first >= 0)
+          while (first > 0)
           {
             QTreeWidgetItem* item = parent->child(first);
             if (!item->data(0, EFBCOPY_ROLE).isNull())
@@ -864,13 +864,44 @@ void FIFOAnalyzer::UpdateTree()
   }
 }
 
+void FIFOAnalyzer::FoldLayer(QTreeWidgetItem* parent)
+{
+  int first = parent->childCount() - 1;
+  QTreeWidgetItem* first_item = nullptr;
+  while (first >= 0)
+  {
+    first_item = parent->child(first);
+    if (!first_item->data(0, EFBCOPY_ROLE).isNull())
+      break;
+    if (!first_item->data(0, LAYER_ROLE).isNull())
+      break;
+    first--;
+  }
+  first++;
+  if (first_item && first_item->data(0, EFBCOPY_ROLE).isNull())
+  {
+    while (first < parent->childCount())
+    {
+      first_item->addChild(parent->takeChild(first));
+    }
+    // everything inside a layer can still be seen
+    // so reflect that in our tree too
+    first_item->setExpanded(true);
+  }
+}
+
 int ItemsFirstObject(QTreeWidgetItem* item, bool allow_siblings = false)
 {
+  // if it's the entire frame or sequence, start at the beginning
+  if (!item->data(0, TYPE_ROLE).isNull())
+  {
+    int type = item->data(0, TYPE_ROLE).toInt();
+    if (type == TYPE_FRAME || type == TYPE_XFBCOPY || type == TYPE_WHOLE)
+      return 0;
+  }
   // if it's an object, problem solved
   if (!item->data(0, PART_START_ROLE).isNull())
     return item->data(0, PART_START_ROLE).toInt();
-  if (!item->parent())
-    return 0;
   // if it has children, try the first child
   int result = INT_MAX;
   if (item->childCount() > 0)
@@ -885,7 +916,8 @@ int ItemsFirstObject(QTreeWidgetItem* item, bool allow_siblings = false)
     if (index + 1 < item->parent()->childCount())
     {
       QTreeWidgetItem* next_item = item->parent()->child(index + 1);
-      if (next_item->data(0, LAYER_ROLE).isNull() || allow_siblings)
+      if ((next_item->data(0, LAYER_ROLE).isNull() && next_item->data(0, EFBCOPY_ROLE).isNull()) ||
+          allow_siblings)
         result = ItemsFirstObject(next_item, allow_siblings);
     }
   }
@@ -911,11 +943,16 @@ int ItemsFirstObject(QTreeWidgetItem* item, bool allow_siblings = false)
 
 int ItemsLastObject(QTreeWidgetItem* item)
 {
+  // if it's the entire frame or sequence, play the whole thing
+  if (!item->data(0, TYPE_ROLE).isNull())
+  {
+    int type = item->data(0, TYPE_ROLE).toInt();
+    if (type == TYPE_FRAME || type == TYPE_XFBCOPY || type == TYPE_WHOLE)
+      return INT_MAX - 1;
+  }
   // if it's an object, problem solved
   if (!item->data(0, PART_END_ROLE).isNull())
     return item->data(0, PART_END_ROLE).toInt();
-  if (!item->parent())
-    return INT_MAX - 1;
   // if it has children, try the last child
   int result = -1;
   if (item->childCount() > 0)
@@ -930,7 +967,8 @@ int ItemsLastObject(QTreeWidgetItem* item)
     while (index + 1 < item->parent()->childCount())
     {
       QTreeWidgetItem* next_item = item->parent()->child(index + 1);
-      if (!next_item->data(0, LAYER_ROLE).isNull())
+      if ((!next_item->data(0, LAYER_ROLE).isNull()) ||
+          (!next_item->data(0, EFBCOPY_ROLE).isNull()))
         break;
       index = index + 1;
     }
@@ -1116,6 +1154,11 @@ void FIFOAnalyzer::UpdateDetails()
         first_frame = frame;
       if (frame > last_frame && frame < INT_MAX)
         last_frame = frame;
+    }
+    else
+    {
+      first_frame = 0;
+      last_frame = INT_MAX - 1;
     }
     int test = ItemsFirstObject(items[sel]);
     if (test < first_object && test >= 0)

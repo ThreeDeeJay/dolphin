@@ -55,6 +55,7 @@ private:
   void CheckObject(u32 frame_nr, u32 start_part_nr, u32 end_part_nr, XFMemory* xf, BPMemory* bp,
                    bool* projection_set, bool* viewport_set, bool* scissor_set,
                    bool* scissor_offset_set, bool* efb_copied, QString* desc);
+  void FoldLayer(QTreeWidgetItem* parent);
 
   QTreeWidget* m_tree_widget;
   QListWidget* m_detail_list;
