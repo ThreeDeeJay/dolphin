@@ -140,7 +140,7 @@ public:
       break;
     }
 
-    text += QStringLiteral("%1, %2 vertices, loader%3 ").arg(s).arg(count).arg(vat);
+    text += QStringLiteral("%1, loader%2 ").arg(s).arg(vat);
   }
 
   OPCODE_CALLBACK(void OnDisplayList(u32 address, u32 size))
