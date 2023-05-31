@@ -767,20 +767,27 @@ void FIFOAnalyzer::UpdateTree()
         layer_item->setData(0, FRAME_ROLE, frame);
         layer_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
         layer_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
-        part_start = part_nr + 1;
         QTreeWidgetItem* parent = frame_item;
-        int first = parent->childCount() - 1;
-        while (first >= 0)
+        if (part_nr == frame_info.parts.size() - 1)
         {
-          QTreeWidgetItem* item = parent->child(first);
-          if (!item->data(0, EFBCOPY_ROLE).isNull())
-            break;
-          first--;
+          layer_item->setData(0, PART_START_ROLE, part_start);
+          layer_item->setData(0, PART_END_ROLE, part_nr);
         }
-        first++;
-        while (first < parent->childCount())
+        else
         {
-          layer_item->addChild(parent->takeChild(first));
+          int first = parent->childCount() - 1;
+          while (first >= 0)
+          {
+            QTreeWidgetItem* item = parent->child(first);
+            if (!item->data(0, EFBCOPY_ROLE).isNull())
+              break;
+            first--;
+          }
+          first++;
+          while (first < parent->childCount())
+          {
+            layer_item->addChild(parent->takeChild(first));
+          }
         }
         parent->addChild(layer_item);
         // if we don't clear the screen after the EFB Copy, we should still be able to see what's
@@ -788,6 +795,7 @@ void FIFOAnalyzer::UpdateTree()
         layer_item->setExpanded((!(analyzer_bpmem.triggerEFBCopy.clear)) ||
                                 analyzer_bpmem.triggerEFBCopy.copy_to_xfb);
         efbcopy_count++;
+        part_start = part_nr + 1;
         object_item = nullptr;
       }
       // We don't create dedicated labels for FramePartType::Command;
@@ -1119,6 +1127,8 @@ void FIFOAnalyzer::UpdateDetails()
     return;
   if (items[0]->data(0, FRAME_ROLE).isNull())
     return;
+
+  // Actual updating of details starts here
 
   const u32 frame_nr = items[0]->data(0, FRAME_ROLE).toUInt();
   const u32 start_part_nr = items[0]->data(0, PART_START_ROLE).toUInt();
