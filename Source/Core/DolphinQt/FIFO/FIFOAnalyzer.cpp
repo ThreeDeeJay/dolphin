@@ -118,16 +118,25 @@ public:
     {    
     case OpcodeDecoder::Primitive::GX_DRAW_QUADS:
     case OpcodeDecoder::Primitive::GX_DRAW_QUADS_2:
-      s = QStringLiteral("%1 quads").arg(count / 4);
+      if (count == 4)
+        s = QStringLiteral("Quad (1 quad)");
+      else
+        s = QStringLiteral("%1 quads").arg(count / 4);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLES:
       s = QStringLiteral("%1 triangles").arg(count / 3);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_STRIP:
-      s = QStringLiteral("%1 triangle strip").arg(count - 2);
+      if (count == 4)
+        s = QStringLiteral("Quad (2 triangle strip)");
+      else
+        s = QStringLiteral("%1 triangle strip").arg(count - 2);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_FAN:
-      s = QStringLiteral("%1 triangle fan").arg(count - 2);
+      if (count == 4)
+        s = QStringLiteral("Quad (2 triangle fan)");
+      else
+        s = QStringLiteral("%1 triangle fan").arg(count - 2);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_LINES:
       s = QStringLiteral("%1 lines").arg(count / 2);
@@ -140,7 +149,7 @@ public:
       break;
     }
 
-    text += QStringLiteral("%1, loader%2 ").arg(s).arg(vat);
+    text += QStringLiteral("%1, loader%2  ").arg(s).arg(vat);
   }
 
   OPCODE_CALLBACK(void OnDisplayList(u32 address, u32 size))
