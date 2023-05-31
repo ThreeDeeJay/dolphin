@@ -183,6 +183,7 @@ void FIFOAnalyzer::CreateWidgets()
   m_object_splitter->addWidget(m_detail_list);
 
   m_tree_widget->header()->hide();
+  m_tree_widget->setSelectionMode(QAbstractItemView::SelectionMode::ContiguousSelection);
 
   m_search_box = new QGroupBox(tr("Search Current Object"));
   m_search_edit = new QLineEdit;
@@ -611,6 +612,7 @@ void FIFOAnalyzer::UpdateTree()
   for (u32 frame = 0; frame < frame_count; frame++)
   {
     auto* frame_item = new QTreeWidgetItem({tr("Frame %1").arg(frame)});
+    frame_item->setData(0, FRAME_ROLE, frame);
     frame_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
 
     recording_item->addChild(frame_item);
@@ -628,11 +630,7 @@ void FIFOAnalyzer::UpdateTree()
       // Projection and viewport inherited from previous frame
       if (part_nr == 0)
       {
-        // QString viewport = DescribeViewport(&analyzer_xfmem.viewport);
-        // QString projection = DescribeProjection(&analyzer_xfmem.projection);
-        // QString scissor = DescribeScissor();
-        // QString s = QStringLiteral("Layer %1: %2, %3").arg(layer).arg(viewport).arg(projection);
-        QString s = DescribeLayer(true, true, true);
+        QString s = QStringLiteral("%1: %2").arg(layer).arg(DescribeLayer(true, true, true));
         auto* layer_item = new QTreeWidgetItem({s});
         layer_item->setData(0, FRAME_ROLE, frame);
         layer_item->setData(0, LAYER_ROLE, layer);
@@ -684,7 +682,8 @@ void FIFOAnalyzer::UpdateTree()
         }
         if (projection_set || viewport_set || scissor_set)
         {
-          QString s = DescribeLayer(viewport_set, scissor_set, projection_set);
+          QString s = QStringLiteral("%1: %2").arg(layer).arg(
+              DescribeLayer(viewport_set, scissor_set, projection_set));
           auto* layer_item = new QTreeWidgetItem({s});
           layer_item->setData(0, FRAME_ROLE, frame);
           layer_item->setData(0, LAYER_ROLE, layer);
@@ -810,10 +809,10 @@ int ItemsFirstObject(QTreeWidgetItem* item)
   if (!item->data(0, PART_START_ROLE).isNull())
     return item->data(0, PART_START_ROLE).toInt();
   // if it has children, try the first child
-  int result = -1;
+  int result = INT_MAX;
   if (item->childCount() > 0)
     result = ItemsFirstObject(item->child(0));
-  if (result >= 0)
+  if (result < INT_MAX)
     return result;
   // if it's a layer, and there are objects after it before the next layer
   // try the first object after it
@@ -841,7 +840,7 @@ int ItemsFirstObject(QTreeWidgetItem* item)
     }
     result = ItemsFirstObject(item->parent()->child(index));
   }
-  // either we found our first object, or we're returning -1
+  // either we found our first object, or we're returning INT_MAX
   return result;
 }
 
@@ -1037,23 +1036,40 @@ void FIFOAnalyzer::UpdateDetails()
     return;
 
   // Only play the selected frame and selected objects in the game window
-  const u32 frame_nr = items[0]->data(0, FRAME_ROLE).toUInt();
-  int first_object = ItemsFirstObject(items[0]);
-  int last_object = ItemsLastObject(items.last());
+  int first_object = INT_MAX;
+  int last_object = -1;
+  int first_frame = INT_MAX;
+  int last_frame = -1;
+  for (int sel = 0; sel < items.count(); sel++)
+  {
+    if (!items[sel]->data(0, FRAME_ROLE).isNull())
+    {
+      int frame = items[sel]->data(0, FRAME_ROLE).toInt();
+      if (frame < first_frame && frame >= 0)
+        first_frame = frame;
+      if (frame > last_frame && frame < INT_MAX)
+        last_frame = frame;
+    }
+    int test = ItemsFirstObject(items[sel]);
+    if (test < first_object && test >= 0)
+      first_object = test;
+    if (test > last_object && test < INT_MAX)
+      last_object = test;
+    test = ItemsLastObject(items[sel]);
+    if (test < first_object && test >= 0)
+      first_object = test;
+    if (test > last_object && test < INT_MAX)
+      last_object = test;
+  }
+  if (first_frame == INT_MAX)
+    first_frame = 0;
+  if (last_frame < 0)
+    last_frame = INT_MAX - 1;
   FifoPlayer& player = FifoPlayer::GetInstance();
   player.SetObjectRangeStart(first_object);
-  player.SetObjectRangeEnd(last_object + 1);
-  if (items[0]->data(0, FRAME_ROLE).isNull())
-  {
-    player.SetFrameRangeStart(0);
-    player.SetFrameRangeEnd(items[0]->childCount());
-    return;
-  }
-  else
-  {
-    player.SetFrameRangeStart(frame_nr);
-    player.SetFrameRangeEnd(frame_nr + 1);
-  }
+  player.SetObjectRangeEnd(last_object);
+  player.SetFrameRangeStart(first_frame);
+  player.SetFrameRangeEnd(last_frame + 1);
 
   if (!items[0]->data(0, LAYER_ROLE).isNull())
   {
@@ -1062,7 +1078,10 @@ void FIFOAnalyzer::UpdateDetails()
   }
   if (items[0]->data(0, PART_START_ROLE).isNull())
     return;
+  if (items[0]->data(0, FRAME_ROLE).isNull())
+    return;
 
+  const u32 frame_nr = items[0]->data(0, FRAME_ROLE).toUInt();
   const u32 start_part_nr = items[0]->data(0, PART_START_ROLE).toUInt();
   const u32 end_part_nr = items[0]->data(0, PART_END_ROLE).toUInt();
 
