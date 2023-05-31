@@ -821,29 +821,35 @@ std::pair<std::string, std::string> GetBPRegInfo(u8 cmd, u32 cmddata)
   case BPMEM_DISPLAYCOPYFILTER + 1:
   case BPMEM_DISPLAYCOPYFILTER + 2:
   case BPMEM_DISPLAYCOPYFILTER + 3:
-    // TODO: This is actually the sample pattern used for copies from an antialiased EFB
-    return DescriptionlessReg(BPMEM_DISPLAYCOPYFILTER);
-    // TODO: Description
+  {
+    std::string desc =
+        "This is actually the sample pattern used for copies from an antialiased EFB\n";
+    if (cmddata == 0x666666)
+      desc += "GX_SetCopyFilter(false, ...)";
+    else
+      desc += fmt::format("GX_SetCopyFilter(true, ...{:x}...)", cmddata);
+    return std::make_pair(RegName(BPMEM_DISPLAYCOPYFILTER), desc);
+  }
 
   case BPMEM_IND_MTXA:  // 0x06
   case BPMEM_IND_MTXA + 3:
   case BPMEM_IND_MTXA + 6:
     return std::make_pair(fmt::format("BPMEM_IND_MTXA Matrix {}", (cmd - BPMEM_IND_MTXA) / 3),
-                          fmt::format("Matrix {} column A\n{}", (cmd - BPMEM_IND_MTXA) / 3,
+                          fmt::format("GXSetIndTexMtx()\nSet the indirect texture matrices\nMatrix {} column A\n{}", (cmd - BPMEM_IND_MTXA) / 3,
                                       IND_MTXA{.hex = cmddata}));
 
   case BPMEM_IND_MTXB:  // 0x07
   case BPMEM_IND_MTXB + 3:
   case BPMEM_IND_MTXB + 6:
     return std::make_pair(fmt::format("BPMEM_IND_MTXB Matrix {}", (cmd - BPMEM_IND_MTXB) / 3),
-                          fmt::format("Matrix {} column B\n{}", (cmd - BPMEM_IND_MTXB) / 3,
+                          fmt::format("GXSetIndTexMtx()\nSet the indirect texture matrices\nMatrix {} column B\n{}", (cmd - BPMEM_IND_MTXB) / 3,
                                       IND_MTXB{.hex = cmddata}));
 
   case BPMEM_IND_MTXC:  // 0x08
   case BPMEM_IND_MTXC + 3:
   case BPMEM_IND_MTXC + 6:
     return std::make_pair(fmt::format("BPMEM_IND_MTXC Matrix {}", (cmd - BPMEM_IND_MTXC) / 3),
-                          fmt::format("Matrix {} column C\n{}", (cmd - BPMEM_IND_MTXC) / 3,
+                          fmt::format("GXSetIndTexMtx()\nSet the indirect texture matrices\nMatrix {} column C\n{}", (cmd - BPMEM_IND_MTXC) / 3,
                                       IND_MTXC{.hex = cmddata}));
 
   case BPMEM_IND_IMASK:  // 0x0F
@@ -870,10 +876,12 @@ std::pair<std::string, std::string> GetBPRegInfo(u8 cmd, u32 cmddata)
                           fmt::to_string(TevStageIndirect{.fullhex = cmddata}));
 
   case BPMEM_SCISSORTL:  // 0x20
-    return std::make_pair(RegName(BPMEM_SCISSORTL), fmt::to_string(ScissorPos{.hex = cmddata}));
+    return std::make_pair(RegName(BPMEM_SCISSORTL), fmt::format("Set scissor rectangle top left corner: ({}, {})\n{}",
+                                   (cmddata >> 12) - 342, (cmddata & 0xFFF) - 342, ScissorPos{.hex = cmddata}));
 
   case BPMEM_SCISSORBR:  // 0x21
-    return std::make_pair(RegName(BPMEM_SCISSORBR), fmt::to_string(ScissorPos{.hex = cmddata}));
+    return std::make_pair(RegName(BPMEM_SCISSORBR), fmt::format("Set scissor rectangle bottom right corner: ({}, {})\n{}",
+                                   (cmddata >> 12) - 342, (cmddata & 0xFFF) - 342, ScissorPos{.hex = cmddata}));
 
   case BPMEM_LINEPTWIDTH:  // 0x22
     return std::make_pair(RegName(BPMEM_LINEPTWIDTH), fmt::to_string(LPSize{.hex = cmddata}));
@@ -938,35 +946,48 @@ std::pair<std::string, std::string> GetBPRegInfo(u8 cmd, u32 cmddata)
 
   case BPMEM_CONSTANTALPHA:  // 0x42
     return std::make_pair(RegName(BPMEM_CONSTANTALPHA),
-                          fmt::to_string(ConstantAlpha{.hex = cmddata}));
+                          fmt::format("Constant Destination Alpha\n{}", ConstantAlpha{.hex = cmddata}));
 
   case BPMEM_ZCOMPARE:  // 0x43
     return std::make_pair(RegName(BPMEM_ZCOMPARE), fmt::to_string(PEControl{.hex = cmddata}));
 
   case BPMEM_FIELDMASK:  // 0x44
-    return std::make_pair(RegName(BPMEM_FIELDMASK), fmt::to_string(FieldMask{.hex = cmddata}));
+    return std::make_pair(RegName(BPMEM_FIELDMASK), fmt::format("Interlacing Control\nFields are written to the EFB only if their bit is set to write.\nGX_SetFieldMask(even_mask, odd_mask)\n{}",  FieldMask{.hex = cmddata}));
 
   case BPMEM_SETDRAWDONE:  // 0x45
-    return DescriptionlessReg(BPMEM_SETDRAWDONE);
-    // TODO: Description
+  {
+    std::string desc;
+    switch (cmddata & 0xFF)
+    {
+    case 0x02:
+      desc = fmt::format("GXSetDrawDone SetPEFinish (value: 0x%{:x})", cmddata);
+      break;
+    default:
+      desc = fmt::format("GXSetDrawDone ??? (value: 0x%{:x})", cmddata);
+      break;
+    }
+    return std::make_pair(RegName(BPMEM_SETDRAWDONE), desc);
+  }
 
   case BPMEM_BUSCLOCK0:  // 0x46
-    return DescriptionlessReg(BPMEM_BUSCLOCK0);
-    // TODO: Description
+    return std::make_pair(RegName(BPMEM_BUSCLOCK0), "Unimportant regs (Clock, Perf, ...)\n"
+                                                    "TB Bus Clock ?");
 
   case BPMEM_PE_TOKEN_ID:  // 0x47
-    return DescriptionlessReg(BPMEM_PE_TOKEN_ID);
-    // TODO: Description
+    return std::make_pair(
+        RegName(BPMEM_PE_TOKEN_ID),
+        fmt::format("Pixel Engine Token Id\nSetPEToken 0x{:x}", cmddata & 0xFFFF));
 
   case BPMEM_PE_TOKEN_INT_ID:  // 0x48
-    return DescriptionlessReg(BPMEM_PE_TOKEN_INT_ID);
-    // TODO: Description
+    return std::make_pair(
+        RegName(BPMEM_PE_TOKEN_INT_ID),
+        fmt::format("Pixel Engine Token Id\nSetPEToken + INT 0x{:x}", cmddata & 0xFFFF));
 
   case BPMEM_EFB_TL:  // 0x49
   {
     const X10Y10 left_top{.hex = cmddata};
     return std::make_pair(RegName(BPMEM_EFB_TL),
-                          fmt::format("EFB Left: {}\nEFB Top: {}", left_top.x, left_top.y));
+                          fmt::format("EFB Copy config\nEFB Left: {}\nEFB Top: {}", left_top.x, left_top.y));
   }
 
   case BPMEM_EFB_WH:  // 0x4A
@@ -974,7 +995,7 @@ std::pair<std::string, std::string> GetBPRegInfo(u8 cmd, u32 cmddata)
     const X10Y10 width_height{.hex = cmddata};
     return std::make_pair(
         RegName(BPMEM_EFB_WH),
-        fmt::format("EFB Width: {}\nEFB Height: {}", width_height.x + 1, width_height.y + 1));
+        fmt::format("EFB Copy config\nEFB Width: {}\nEFB Height: {}", width_height.x + 1, width_height.y + 1));
   }
 
   case BPMEM_EFB_ADDR:  // 0x4B
@@ -983,8 +1004,12 @@ std::pair<std::string, std::string> GetBPRegInfo(u8 cmd, u32 cmddata)
         fmt::format("EFB Target address (32 byte aligned): 0x{:06X}", cmddata << 5));
 
   case BPMEM_MIPMAP_STRIDE:  // 0x4D
-    return DescriptionlessReg(BPMEM_MIPMAP_STRIDE);
-    // TODO: Description
+    return std::make_pair(
+        RegName(BPMEM_MIPMAP_STRIDE),
+        fmt::format("copyMipMapStrideChannels = {}\nEFB Copy or XFB Copy destination stride = "
+                "{} bytes\nusually set to 4 when dest is single channel, 8 when dest is 2 "
+                "channel, 16 when dest is RGBA",
+                cmddata, cmddata << 5));
 
   case BPMEM_COPYYSCALE:  // 0x4E
     return std::make_pair(
@@ -1085,8 +1110,8 @@ std::pair<std::string, std::string> GetBPRegInfo(u8 cmd, u32 cmddata)
     return std::make_pair(RegName(BPMEM_FIELDMODE), fmt::to_string(FieldMode{.hex = cmddata}));
 
   case BPMEM_BUSCLOCK1:  // 0x69
-    return DescriptionlessReg(BPMEM_BUSCLOCK1);
-    // TODO: Description
+    return std::make_pair(RegName(BPMEM_BUSCLOCK1), "Unimportant regs (Clock, Perf, ...)\n"
+                                                    "TB Bus Clock ?");
 
   case BPMEM_TX_SETMODE0:  // 0x80
   case BPMEM_TX_SETMODE0 + 1:
@@ -1287,8 +1312,7 @@ std::pair<std::string, std::string> GetBPRegInfo(u8 cmd, u32 cmddata)
     return std::make_pair(RegName(BPMEM_ALPHACOMPARE), fmt::to_string(AlphaTest{.hex = cmddata}));
 
   case BPMEM_BIAS:  // 0xF4
-    return DescriptionlessReg(BPMEM_BIAS);
-    // TODO: Description
+    return std::make_pair(RegName(BPMEM_BIAS), fmt::format("Z Texture Bias = {}", cmddata));
 
   case BPMEM_ZTEX2:  // 0xF5
     return std::make_pair(RegName(BPMEM_ZTEX2), fmt::to_string(ZTex2{.hex = cmddata}));
@@ -1302,7 +1326,8 @@ std::pair<std::string, std::string> GetBPRegInfo(u8 cmd, u32 cmddata)
   case BPMEM_TEV_KSEL + 6:
   case BPMEM_TEV_KSEL + 7:
     return std::make_pair(fmt::format("BPMEM_TEV_KSEL number {}", cmd - BPMEM_TEV_KSEL),
-                          fmt::to_string(std::make_pair(cmd, TevKSel{.hex = cmddata})));
+        fmt::format("Texture Environment Swap Mode Table {}\n{}",
+                    cmd - BPMEM_TEV_KSEL, std::make_pair(cmd, TevKSel{.hex = cmddata})));
 
   case BPMEM_BP_MASK:  // 0xFE
     return std::make_pair(RegName(BPMEM_BP_MASK),
