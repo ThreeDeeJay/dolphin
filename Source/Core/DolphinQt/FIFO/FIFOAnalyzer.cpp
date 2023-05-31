@@ -47,6 +47,11 @@ constexpr int PART_END_ROLE = Qt::UserRole + 2;
 constexpr int LAYER_ROLE = Qt::UserRole + 3;
 constexpr int EFBCOPY_ROLE = Qt::UserRole + 4;
 
+QString primitive_names[] = {QStringLiteral("Quads"),        QStringLiteral("Quads_2"),
+                             QStringLiteral("Triangles"),    QStringLiteral("Triangle Strip"),
+                             QStringLiteral("Triangle Fan"), QStringLiteral("Lines"),
+                             QStringLiteral("Line Strip"),   QStringLiteral("Points")};
+
 namespace
 {
 class SimulateCallback : public OpcodeDecoder::Callback
@@ -105,7 +110,38 @@ public:
   OPCODE_CALLBACK(void OnIndexedLoad(CPArray array, u32 index, u16 address, u8 size)) {}
 
   OPCODE_CALLBACK(void OnPrimitiveCommand(OpcodeDecoder::Primitive primitive, u8 vat,
-                                          u32 vertex_size, u16 num_vertices, const u8* vertex_data)) {}
+                                          u32 vertex_size, u16 num_vertices, const u8* vertex_data))
+  {
+    int count = num_vertices;
+    QString s;
+    switch (primitive)
+    {    
+    case OpcodeDecoder::Primitive::GX_DRAW_QUADS:
+    case OpcodeDecoder::Primitive::GX_DRAW_QUADS_2:
+      s = QStringLiteral("%1 quads").arg(count / 4);
+      break;
+    case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLES:
+      s = QStringLiteral("%1 triangles").arg(count / 3);
+      break;
+    case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_STRIP:
+      s = QStringLiteral("%1 triangle strip").arg(count - 2);
+      break;
+    case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_FAN:
+      s = QStringLiteral("%1 triangle fan").arg(count - 2);
+      break;
+    case OpcodeDecoder::Primitive::GX_DRAW_LINES:
+      s = QStringLiteral("%1 lines").arg(count / 2);
+      break;
+    case OpcodeDecoder::Primitive::GX_DRAW_LINE_STRIP:
+      s = QStringLiteral("%1 line strip").arg(count - 1);
+      break;
+    case OpcodeDecoder::Primitive::GX_DRAW_POINTS:
+      s = QStringLiteral("%1 points").arg(count);
+      break;
+    }
+
+    text += QStringLiteral("%1, %2 vertices, loader%3 ").arg(s).arg(count).arg(vat);
+  }
 
   OPCODE_CALLBACK(void OnDisplayList(u32 address, u32 size))
   {
@@ -127,6 +163,7 @@ public:
     return VertexLoaderBase::GetVertexSize(GetCPState().vtx_desc, GetCPState().vtx_attr[vat]);
   }
 
+  QString text;
   CPState m_cpmem;
   XFMemory* xfmem;
   BPMemory* bpmem;
@@ -646,10 +683,11 @@ void FIFOAnalyzer::UpdateTree()
       QTreeWidgetItem* object_item = nullptr;
       if (part.m_type == FramePartType::PrimitiveData)
       {
-        object_item = new QTreeWidgetItem({tr("Object %1").arg(part_type_nr)});
+        QString obj_desc;
         CheckObject(frame, part_start, part_nr, &analyzer_xfmem, &analyzer_bpmem, &projection_set,
-                    &viewport_set,
-                    &scissor_set, &scissor_offset_set, &efb_copied);
+                    &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied, &obj_desc);
+        object_item =
+            new QTreeWidgetItem({tr("Object %1: %2").arg(part_type_nr).arg(obj_desc)});
         if (efb_copied)
         {
           QString efb_copy = DescribeEFBCopy();
@@ -720,8 +758,9 @@ void FIFOAnalyzer::UpdateTree()
       }
       else if (part.m_type == FramePartType::EFBCopy)
       {
+        QString obj_desc;
         CheckObject(frame, part_start, part_nr, &analyzer_xfmem, &analyzer_bpmem, &projection_set,
-                    &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied);
+                    &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied, &obj_desc);
         QString efb_copy = DescribeEFBCopy();
         QString s = QStringLiteral("EFB Copy %1: %2").arg(efbcopy_count).arg(efb_copy);
         auto* layer_item = new QTreeWidgetItem({s});
@@ -1534,8 +1573,8 @@ void FIFOAnalyzer::UpdateDescription()
 }
 
 void FIFOAnalyzer::CheckObject(u32 frame_nr, u32 start_part_nr, u32 end_part_nr, XFMemory* xf, BPMemory* bp,
-                               bool* projection_set, bool* viewport_set, bool* scissor_set,
-                               bool* scissor_offset_set, bool* efb_copied)
+                               bool* projection_set, bool* viewport_set, bool* scissor_set, bool* scissor_offset_set, bool* efb_copied,
+                               QString* desc)
 {
   *projection_set = false;
   *viewport_set = false;
@@ -1573,4 +1612,5 @@ void FIFOAnalyzer::CheckObject(u32 frame_nr, u32 start_part_nr, u32 end_part_nr,
   *scissor_set = callback.scissor_set;
   *scissor_offset_set = callback.scissor_offset_set;
   *efb_copied = callback.efb_copied;
+  *desc = callback.text;
 }
