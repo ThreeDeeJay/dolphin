@@ -329,7 +329,7 @@ std::pair<std::string, std::string> GetXFRegInfo(u32 address, u32 value)
     return std::make_pair(RegName(XFMEM_CLIPDISABLE), fmt::to_string(ClipDisable{.hex = value}));
 
   case XFMEM_VTXSPECS:
-    return std::make_pair(RegName(XFMEM_VTXSPECS), fmt::to_string(INVTXSPEC{.hex = value}));
+    return std::make_pair(RegName(XFMEM_VTXSPECS), fmt::format("//__GXXfVtxSpecs, wrote 0004\n{}", INVTXSPEC{.hex = value}));
 
   case XFMEM_SETNUMCHAN:
     return std::make_pair(RegName(XFMEM_SETNUMCHAN),
