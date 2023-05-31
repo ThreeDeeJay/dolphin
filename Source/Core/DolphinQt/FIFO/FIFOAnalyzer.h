@@ -20,6 +20,8 @@ class QTreeWidget;
 class QTreeWidgetItem;
 struct Viewport;
 struct Projection;
+struct XFMemory;
+struct BPMemory;
 
 class FIFOAnalyzer final : public QWidget
 {
@@ -31,7 +33,9 @@ public:
 
   void Update();
   QString DescribeViewport(Viewport* viewport);
+  QString DescribeScissor();
   QString DescribeProjection(Projection* proj);
+  QString DescribeLayer(bool set_viewport, bool set_scissor, bool set_projection);
 
 private:
   void CreateWidgets();
@@ -47,6 +51,9 @@ private:
   void UpdateDetails();
   void UpdateLayerDetails(QTreeWidgetItem* item);
   void UpdateDescription();
+  void CheckObject(u32 frame_nr, u32 start_part_nr, u32 end_part_nr, XFMemory* xf, BPMemory* bp,
+                   bool* projection_set, bool* viewport_set, bool* scissor_set,
+                   bool* scissor_offset_set, bool* efb_copied);
 
   QTreeWidget* m_tree_widget;
   QListWidget* m_detail_list;

@@ -16,6 +16,8 @@
 #include <QTextBrowser>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QApplication>
+#include <QPalette>
 
 #include "Common/Assert.h"
 #include "Common/MathUtil.h"
@@ -31,6 +33,9 @@
 #include "VideoCommon/VertexLoaderBase.h"
 #include "VideoCommon/XFStructs.h"
 
+static XFMemory analyzer_xfmem{};
+static BPMemory analyzer_bpmem{};
+
 // Values range from 0 to number of frames - 1
 constexpr int FRAME_ROLE = Qt::UserRole;
 // Values range from 0 to number of parts - 1
@@ -39,6 +44,94 @@ constexpr int PART_START_ROLE = Qt::UserRole + 1;
 constexpr int PART_END_ROLE = Qt::UserRole + 2;
 // Analyze initial viewport and projection matrix
 constexpr int LAYER_ROLE = Qt::UserRole + 3;
+
+namespace
+{
+class SimulateCallback : public OpcodeDecoder::Callback
+{
+public:
+  explicit SimulateCallback(CPState cpmem, XFMemory* xf, BPMemory* bp) : m_cpmem(cpmem), xfmem(xf), bpmem(bp), viewport_set(false), projection_set(false),
+        scissor_set(false), scissor_offset_set(false), efb_copied(false) {}
+
+  OPCODE_CALLBACK(void OnCP(u8 command, u32 value)) {}
+
+  OPCODE_CALLBACK(void OnXF(u16 baseAddress, u8 transferSize, const u8* data))
+  {
+    // do not allow writes past registers
+    if (baseAddress + transferSize > XFMEM_REGISTERS_END)
+    {
+      if (baseAddress >= XFMEM_REGISTERS_END)
+        transferSize = 0;
+      else
+        transferSize = XFMEM_REGISTERS_END - baseAddress;
+    }
+    u32 address = baseAddress;
+    u32* xfm = (u32*)xfmem;
+    while (transferSize > 0 && address < XFMEM_REGISTERS_END)
+    {
+      u32 newValue = Common::swap32(data);
+      xfm[address] = newValue;
+      if (XFMEM_SETPROJECTION <= address && address <= XFMEM_SETPROJECTION + 6)
+        projection_set = true;
+      else if (XFMEM_SETVIEWPORT <= address && address <= XFMEM_SETVIEWPORT + 5)
+        viewport_set = true;
+
+      address++;
+      transferSize--;
+    }
+  }
+
+  OPCODE_CALLBACK(void OnBP(u8 cmd, u32 value))
+  {
+    if (cmd == BPMEM_SCISSORTL || cmd == BPMEM_SCISSORBR)
+      scissor_set = true;
+    else if (cmd == BPMEM_SCISSOROFFSET)
+      scissor_offset_set = true;
+    else if (cmd == BPMEM_TRIGGER_EFB_COPY)
+      efb_copied = true;
+
+    int oldval = ((u32*)&bpmem)[cmd];
+    int newval = (oldval & ~bpmem->bpMask) | (value & bpmem->bpMask);
+
+    ((u32*)bpmem)[cmd] = newval;
+
+    // Reset the mask register if we're not trying to set it ourselves.
+    if (cmd != BPMEM_BP_MASK)
+      bpmem->bpMask = 0xFFFFFF;
+  }
+
+  OPCODE_CALLBACK(void OnIndexedLoad(CPArray array, u32 index, u16 address, u8 size)) {}
+
+  OPCODE_CALLBACK(void OnPrimitiveCommand(OpcodeDecoder::Primitive primitive, u8 vat,
+                                          u32 vertex_size, u16 num_vertices, const u8* vertex_data)) {}
+
+  OPCODE_CALLBACK(void OnDisplayList(u32 address, u32 size))
+  {
+    // todo: check how to handle display lists in Fifo Player
+  }
+
+  OPCODE_CALLBACK(void OnNop(u32 count)) {}
+
+  OPCODE_CALLBACK(void OnUnknown(u8 opcode, const u8* data)) {}
+
+  OPCODE_CALLBACK(void OnCommand(const u8* data, u32 size)) {
+
+  }
+
+  OPCODE_CALLBACK(CPState& GetCPState()) { return m_cpmem; }
+
+  OPCODE_CALLBACK(u32 GetVertexSize(u8 vat))
+  {
+    return VertexLoaderBase::GetVertexSize(GetCPState().vtx_desc, GetCPState().vtx_attr[vat]);
+  }
+
+  CPState m_cpmem;
+  XFMemory* xfmem;
+  BPMemory* bpmem;
+  bool projection_set, viewport_set, scissor_set, scissor_offset_set, efb_copied;
+};
+}  // namespace
+
 
 FIFOAnalyzer::FIFOAnalyzer()
 {
@@ -76,6 +169,11 @@ void FIFOAnalyzer::CreateWidgets()
   m_tree_widget = new QTreeWidget;
   m_detail_list = new QListWidget;
   m_entry_detail_browser = new QTextBrowser;
+
+  //m_tree_widget->setObjectName("m_tree_widget");
+  //m_detail_list->setObjectName("m_detail_list");
+  //m_entry_detail_browser->setObjectName("m_entry_detail_browser");
+  //setStyleSheet(QStringLiteral("AnyQtWidget#m_tree_widget {}"));
 
   m_object_splitter = new QSplitter(Qt::Horizontal);
 
@@ -139,13 +237,88 @@ void FIFOAnalyzer::Update()
 
 QString FIFOAnalyzer::DescribeViewport(Viewport* viewport)
 {
-  float x = viewport->xOrig - viewport->wd;
-  float y = viewport->yOrig + viewport->ht;
+  float x = viewport->xOrig - viewport->wd - analyzer_bpmem.scissorOffset.x * 2;
+  float y = viewport->yOrig + viewport->ht - analyzer_bpmem.scissorOffset.y * 2;
 
   float width = 2.0f * viewport->wd;
   float height = -2.0f * viewport->ht;
   float min_depth = (viewport->farZ - viewport->zRange) / 16777216.0f;
   float max_depth = viewport->farZ / 16777216.0f;
+  if (width < 0.f)
+  {
+    // x += width;
+    // width *= -1;
+  }
+  if (height < 0.f)
+  {
+    // y += height;
+    // height *= -1;
+  }
+
+  return QStringLiteral("VP (%1, %2) %3 x %4, z %5 to %6")
+      .arg(x)
+      .arg(y)
+      .arg(width)
+      .arg(height)
+      .arg(min_depth)
+      .arg(max_depth);
+}
+
+QString FIFOAnalyzer::DescribeScissor()
+{
+  const int xoff = analyzer_bpmem.scissorOffset.x * 2;
+  const int yoff = analyzer_bpmem.scissorOffset.y * 2;
+
+  MathUtil::Rectangle<int> r(analyzer_bpmem.scissorTL.x - xoff, analyzer_bpmem.scissorTL.y - yoff,
+                             analyzer_bpmem.scissorBR.x - xoff + 1,
+                             analyzer_bpmem.scissorBR.y - yoff + 1);
+
+  return QStringLiteral("Scissor (%1, %2) %3 x %4")
+      .arg(r.left)
+      .arg(r.top)
+      .arg(r.GetWidth())
+      .arg(r.GetHeight());
+}
+
+static bool AlmostEqual(float a, float b)
+{
+  constexpr const float epsilon = 0.001f;
+  return fabs(a - b) < epsilon;
+}
+
+static bool AlmostEqual(MathUtil::Rectangle<float> r, MathUtil::Rectangle<float> r2)
+{
+  return AlmostEqual(r.left, r2.left) && AlmostEqual(r.right, r2.right) &&
+         AlmostEqual(r.top, r2.top) && AlmostEqual(r.bottom, r2.bottom);
+}
+
+static bool AlmostEqual(MathUtil::Rectangle<float> r, MathUtil::Rectangle<float> r2,
+                        MathUtil::Rectangle<float> r3)
+{
+  return AlmostEqual(r, r2) && AlmostEqual(r2, r3);
+}
+
+QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool set_projection)
+{
+  QString result;
+  const int xoff = analyzer_bpmem.scissorOffset.x * 2;
+  const int yoff = analyzer_bpmem.scissorOffset.y * 2;
+  MathUtil::Rectangle<float> r_scissor(
+      analyzer_bpmem.scissorTL.x - xoff, analyzer_bpmem.scissorTL.y - yoff,
+      analyzer_bpmem.scissorBR.x - xoff + 1, analyzer_bpmem.scissorBR.y - yoff + 1);
+  if (!set_scissor)
+  {
+    r_scissor.left = -1;
+    r_scissor.right = -1;
+    r_scissor.top = -1;
+    r_scissor.bottom = -1;
+  }
+
+  float x = analyzer_xfmem.viewport.xOrig - analyzer_xfmem.viewport.wd - xoff;
+  float y = analyzer_xfmem.viewport.yOrig + analyzer_xfmem.viewport.ht - yoff;
+
+  float width = 2.0f * analyzer_xfmem.viewport.wd;
+  float height = -2.0f * analyzer_xfmem.viewport.ht;
   if (width < 0.f)
   {
     x += width;
@@ -156,14 +329,123 @@ QString FIFOAnalyzer::DescribeViewport(Viewport* viewport)
     y += height;
     height *= -1;
   }
+  MathUtil::Rectangle<float> r_viewport(x, y, x + width, y + height);
+  float min_depth = (analyzer_xfmem.viewport.farZ - analyzer_xfmem.viewport.zRange) / 16777216.0f;
+  float max_depth = analyzer_xfmem.viewport.farZ / 16777216.0f;
+  if (!set_viewport)
+  {
+    r_viewport.left = -2;
+    r_viewport.right = -2;
+    r_viewport.top = -2;
+    r_viewport.bottom = -2;
+    min_depth = 0;
+    max_depth = 1;
+  }
 
-  return QStringLiteral("Viewport (%1, %2) %3 x %4, depth: %5 to %6")
-      .arg(x)
-      .arg(y)
-      .arg(width)
-      .arg(height)
-      .arg(min_depth)
-      .arg(max_depth);
+  if (set_projection && analyzer_xfmem.projection.type == ProjectionType::Orthographic)
+  {
+    width = 2 / analyzer_xfmem.projection.rawProjection[0];
+    height = -2 / analyzer_xfmem.projection.rawProjection[2];
+    x = (-analyzer_xfmem.projection.rawProjection[1] - 1) * width / 2;
+    y = (analyzer_xfmem.projection.rawProjection[3] - 1) * height / 2;
+  }
+  else
+  {
+    x = -3;
+    y = -3;
+    width = -3;
+    height = -3;
+  }
+  MathUtil::Rectangle<float> r_projection(x, y, x + width, y + height);
+
+  // Viewport
+  if (AlmostEqual(r_viewport, r_scissor, r_projection))
+  {
+    result = QStringLiteral("VP+Scissor+Proj 2D");
+    if (r_viewport.left != 0 || r_viewport.top != 0)
+      result += QStringLiteral(" (%1, %2)").arg(r_viewport.left).arg(r_viewport.top);
+    result += QStringLiteral(" %1x%2").arg(r_viewport.GetWidth()).arg(r_viewport.GetHeight());
+    set_projection = false;
+    set_scissor = false;
+  }
+  else if (AlmostEqual(r_viewport, r_scissor))
+  {
+    result = QStringLiteral("VP+Scissor");
+    if (r_viewport.left != 0 || r_viewport.top != 0)
+      result += QStringLiteral(" (%1, %2)").arg(r_viewport.left).arg(r_viewport.top);
+    result += QStringLiteral(" %1x%2").arg(r_viewport.GetWidth()).arg(r_viewport.GetHeight());
+    set_scissor = false;
+  }
+  else if (AlmostEqual(r_viewport, r_projection))
+  {
+    result = QStringLiteral("VP+Proj 2D");
+    if (r_viewport.left != 0 || r_viewport.top != 0)
+      result += QStringLiteral(" (%1, %2)").arg(r_viewport.left).arg(r_viewport.top);
+    result += QStringLiteral(" %1x%2").arg(r_viewport.GetWidth()).arg(r_viewport.GetHeight());
+    set_projection = false;
+  }
+  else if (set_viewport)
+  {
+    result = QStringLiteral("VP");
+    if (r_viewport.left != 0 || r_viewport.top != 0)
+      result += QStringLiteral(" (%1, %2)").arg(r_viewport.left).arg(r_viewport.top);
+    result += QStringLiteral(" %1x%2").arg(r_viewport.GetWidth()).arg(r_viewport.GetHeight());
+  }
+
+  // Scissor
+  if (set_scissor)
+  {
+    if (set_viewport)
+      result += QStringLiteral(" ");
+    if (set_scissor && set_projection && AlmostEqual(r_scissor, r_projection))
+    {
+      result += QStringLiteral("Scissor+Proj 2D");
+      set_projection = false;
+    }
+    else if (set_scissor)
+    {
+      result += QStringLiteral("Scissor");
+    }
+    if (r_scissor.left != 0 || r_scissor.top != 0)
+      result += QStringLiteral(" (%1, %2)").arg(r_scissor.left).arg(r_scissor.top);
+    result += QStringLiteral(" %1x%2").arg(r_scissor.GetWidth()).arg(r_scissor.GetHeight());
+  }
+
+  // Projection
+  if (set_projection)
+  {
+    if (set_viewport || set_scissor)
+      result += QStringLiteral(" ");
+    if (analyzer_xfmem.projection.type == ProjectionType::Orthographic)
+    {
+      result += QStringLiteral("Proj 2D");
+      if (r_projection.left != 0 || r_projection.top != 0)
+        result += QStringLiteral(" (%1, %2)").arg(r_projection.left).arg(r_projection.top);
+      result += QStringLiteral(" %1x%2").arg(r_projection.GetWidth()).arg(r_projection.GetHeight());
+    }
+    else
+    {
+      float a = analyzer_xfmem.projection.rawProjection[4];
+      float b = analyzer_xfmem.projection.rawProjection[5];
+      float n = -b / (1 - a);
+      float f = b / a;
+      float t = 1 / analyzer_xfmem.projection.rawProjection[0];
+      float hfov = atan(t) * 2;
+      float vfov = atan(1 / analyzer_xfmem.projection.rawProjection[2]) * 2;
+      float aspect = tan(hfov / 2) / tan(vfov / 2);
+      result += QStringLiteral("Proj FOV %1 x %2 deg, AR 16:%3, near %4 far %5")
+                    .arg(hfov * 360 / float(MathUtil::TAU))
+                    .arg(vfov * 360 / float(MathUtil::TAU))
+                    .arg(16 / aspect)
+                    .arg(n)
+                    .arg(f);
+    }
+  }
+  if (min_depth != 0 || max_depth != 1)
+  {
+    result += QStringLiteral(", z %1 to %2").arg(min_depth).arg(max_depth);
+  }
+  return result;
 }
 
 QString FIFOAnalyzer::DescribeProjection(Projection* proj)
@@ -171,8 +453,8 @@ QString FIFOAnalyzer::DescribeProjection(Projection* proj)
   if (proj->type == ProjectionType::Orthographic)
   {
     float w = 2 / proj->rawProjection[0];
-    float h = 2 / proj->rawProjection[2];
-    return QStringLiteral("2D %1 x %2").arg(w).arg(h);
+    float h = -2 / proj->rawProjection[2];
+    return QStringLiteral("Proj 2D %1 x %2").arg(w).arg(h);
   }
   else
   {
@@ -184,7 +466,7 @@ QString FIFOAnalyzer::DescribeProjection(Projection* proj)
     float hfov = atan(t) * 2;
     float vfov = atan(1 / proj->rawProjection[2]) * 2;
     float aspect = tan(hfov / 2) / tan(vfov / 2);
-    return QStringLiteral("HFOV %1 deg, VFOV %2 deg, AR 16:%3, z %4 to %5")
+    return QStringLiteral("Proj FOV %1 x %2 deg, AR 16:%3, z %4 to %5")
         .arg(hfov * 360 / float(MathUtil::TAU))
         .arg(vfov * 360 / float(MathUtil::TAU))
         .arg(16 / aspect)
@@ -204,9 +486,14 @@ void FIFOAnalyzer::UpdateTree()
   }
 
   auto* recording_item = new QTreeWidgetItem({tr("Recording")});
-  QBrush blue_brush;
-  blue_brush.setColor(Qt::GlobalColor::blue);
-  recording_item->setForeground(0, blue_brush);
+  QPalette blue_palette, green_palette, red_palette;
+  QColor color;
+  color.setRgb(0, 80, 255);
+  blue_palette.setColor(QPalette::Text, color);
+  color.setRgb(200, 0, 0);
+  red_palette.setColor(QPalette::Text, color);
+  color.setRgb(10, 180, 0);
+  green_palette.setColor(QPalette::Text, color);
 
   m_tree_widget->addTopLevelItem(recording_item);
 
@@ -214,9 +501,22 @@ void FIFOAnalyzer::UpdateTree()
 
   const u32 frame_count = file->GetFrameCount();
 
+  bool projection_set = false;
+  bool viewport_set = false;
+  bool scissor_set = false;
+  bool scissor_offset_set = false;
+  bool efb_copied = false;
+  u32* p = FifoPlayer::GetInstance().GetFile()->GetXFMem();
+  memcpy(&analyzer_xfmem, p, 0x1000 * sizeof(u32));
+  p = FifoPlayer::GetInstance().GetFile()->GetXFRegs();
+  memcpy(&analyzer_xfmem.error, p, 0x58 * sizeof(u32));
+  p = FifoPlayer::GetInstance().GetFile()->GetBPMem();
+  memcpy(&analyzer_bpmem, p, sizeof(analyzer_bpmem));
+
   for (u32 frame = 0; frame < frame_count; frame++)
   {
     auto* frame_item = new QTreeWidgetItem({tr("Frame %1").arg(frame)});
+    frame_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
 
     recording_item->addChild(frame_item);
 
@@ -225,17 +525,24 @@ void FIFOAnalyzer::UpdateTree()
 
     Common::EnumMap<u32, FramePartType::EFBCopy> part_counts;
     u32 part_start = 0;
+    int layer = 0;
 
     for (u32 part_nr = 0; part_nr < frame_info.parts.size(); part_nr++)
     {
-      if (frame == 0 && part_nr == 0)
+      // Projection and viewport inherited from previous frame
+      if (part_nr == 0)
       {
-        int layer = 0;
-        auto* layer_item = new QTreeWidgetItem({tr("Layer %1").arg(layer)});
+        // QString viewport = DescribeViewport(&analyzer_xfmem.viewport);
+        // QString projection = DescribeProjection(&analyzer_xfmem.projection);
+        // QString scissor = DescribeScissor();
+        // QString s = QStringLiteral("Layer %1: %2, %3").arg(layer).arg(viewport).arg(projection);
+        QString s = DescribeLayer(true, true, true);
+        auto* layer_item = new QTreeWidgetItem({s});
         layer_item->setData(0, FRAME_ROLE, frame);
         layer_item->setData(0, LAYER_ROLE, layer);
-        layer_item->setForeground(0, blue_brush);
+        layer_item->setData(0, Qt::ForegroundRole, blue_palette.color(QPalette::Text));
         frame_item->addChild(layer_item);
+        layer++;
       }
       const auto& part = frame_info.parts[part_nr];
 
@@ -244,9 +551,46 @@ void FIFOAnalyzer::UpdateTree()
 
       QTreeWidgetItem* object_item = nullptr;
       if (part.m_type == FramePartType::PrimitiveData)
+      {
         object_item = new QTreeWidgetItem({tr("Object %1").arg(part_type_nr)});
+        CheckObject(frame, part_start, part_nr, &analyzer_xfmem, &analyzer_bpmem, &projection_set,
+                    &viewport_set,
+                    &scissor_set, &scissor_offset_set, &efb_copied);
+        if (efb_copied)
+        {
+          QString efb_copy;
+          QString s = QStringLiteral("EFB Copy %1: %2").arg(layer).arg(efb_copy);
+          auto* layer_item = new QTreeWidgetItem({s});
+          layer_item->setData(0, FRAME_ROLE, frame);
+          layer_item->setData(0, LAYER_ROLE, layer);
+          layer_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
+          frame_item->addChild(layer_item);
+          layer++;
+        }
+        if (scissor_offset_set)
+        {
+          scissor_set = true;
+          viewport_set = true;
+        }
+        if (projection_set || viewport_set || scissor_set)
+        {
+          QString s = DescribeLayer(viewport_set, scissor_set, projection_set);
+          auto* layer_item = new QTreeWidgetItem({s});
+          layer_item->setData(0, FRAME_ROLE, frame);
+          layer_item->setData(0, LAYER_ROLE, layer);
+          if (viewport_set || projection_set)
+            layer_item->setData(0, Qt::ForegroundRole, blue_palette.color(QPalette::Text));
+          else
+            layer_item->setData(0, Qt::ForegroundRole, green_palette.color(QPalette::Text));
+          frame_item->addChild(layer_item);
+          layer++;
+        }
+      }
       else if (part.m_type == FramePartType::EFBCopy)
+      {
         object_item = new QTreeWidgetItem({tr("EFB copy %1").arg(part_type_nr)});
+        object_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
+      }
       // We don't create dedicated labels for FramePartType::Command;
       // those are grouped with the primitive
 
@@ -876,4 +1220,46 @@ void FIFOAnalyzer::UpdateDescription()
   OpcodeDecoder::RunCommand(&fifo_frame.fifoData[object_start + entry_start],
                             object_size - entry_start, callback);
   m_entry_detail_browser->setText(callback.text);
+}
+
+void FIFOAnalyzer::CheckObject(u32 frame_nr, u32 start_part_nr, u32 end_part_nr, XFMemory* xf, BPMemory* bp,
+                               bool* projection_set, bool* viewport_set, bool* scissor_set,
+                               bool* scissor_offset_set, bool* efb_copied)
+{
+  *projection_set = false;
+  *viewport_set = false;
+  *scissor_set = false;
+  *scissor_offset_set = false;
+  *efb_copied = false;
+
+  if (!FifoPlayer::GetInstance().IsPlaying())
+    return;
+
+  const AnalyzedFrameInfo& frame_info = FifoPlayer::GetInstance().GetAnalyzedFrameInfo(frame_nr);
+  const auto& fifo_frame = FifoPlayer::GetInstance().GetFile()->GetFrame(frame_nr);
+
+  const u32 object_start = frame_info.parts[start_part_nr].m_start;
+  const u32 object_end = frame_info.parts[end_part_nr].m_end;
+  const u32 object_size = object_end - object_start;
+
+  u32 object_offset = 0;
+  // NOTE: object_info.m_cpmem is the state of cpmem _after_ all of the commands in this object.
+  // However, it doesn't matter that it doesn't match the start, since it will match by the time
+  // primitives are reached.
+  auto callback = SimulateCallback(frame_info.parts[end_part_nr].m_cpmem, xf, bp);
+
+  while (object_offset < object_size)
+  {
+    const u32 start_offset = object_offset;
+    m_object_data_offsets.push_back(start_offset);
+
+    object_offset += OpcodeDecoder::RunCommand(&fifo_frame.fifoData[object_start + start_offset],
+                                               object_size - start_offset, callback);
+  }
+
+  *projection_set = callback.projection_set;
+  *viewport_set = callback.viewport_set;
+  *scissor_set = callback.scissor_set;
+  *scissor_offset_set = callback.scissor_offset_set;
+  *efb_copied = callback.efb_copied;
 }
