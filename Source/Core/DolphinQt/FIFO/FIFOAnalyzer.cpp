@@ -45,6 +45,7 @@ constexpr int PART_START_ROLE = Qt::UserRole + 1;
 constexpr int PART_END_ROLE = Qt::UserRole + 2;
 // Analyze initial viewport and projection matrix
 constexpr int LAYER_ROLE = Qt::UserRole + 3;
+constexpr int EFBCOPY_ROLE = Qt::UserRole + 4;
 
 namespace
 {
@@ -620,6 +621,7 @@ void FIFOAnalyzer::UpdateTree()
     Common::EnumMap<u32, FramePartType::EFBCopy> part_counts;
     u32 part_start = 0;
     int layer = 0;
+    int efbcopy_count = 0;
 
     for (u32 part_nr = 0; part_nr < frame_info.parts.size(); part_nr++)
     {
@@ -653,13 +655,27 @@ void FIFOAnalyzer::UpdateTree()
         if (efb_copied)
         {
           QString efb_copy = DescribeEFBCopy();
-          QString s = QStringLiteral("EFB Copy %1: %2").arg(layer).arg(efb_copy);
+          QString s = QStringLiteral("EFB Copy %1: %2").arg(efbcopy_count).arg(efb_copy);
           auto* layer_item = new QTreeWidgetItem({s});
           layer_item->setData(0, FRAME_ROLE, frame);
-          layer_item->setData(0, LAYER_ROLE, layer);
-          layer_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
-          frame_item->addChild(layer_item);
-          layer++;
+          layer_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
+          layer_item->setData(0, Qt::ForegroundRole, green_palette.color(QPalette::Text));
+          QTreeWidgetItem* parent = frame_item;
+          int first = parent->childCount() - 1;
+          while (first > 0)
+          {
+            QTreeWidgetItem* item = parent->child(first);
+            if (!item->data(0, EFBCOPY_ROLE).isNull())
+              break;
+            first--;
+          }
+          first++;
+          while (first < parent->childCount())
+          {
+            layer_item->addChild(parent->takeChild(first));
+          }
+          parent->addChild(layer_item);
+          efbcopy_count++;
         }
         if (scissor_offset_set)
         {
@@ -685,13 +701,29 @@ void FIFOAnalyzer::UpdateTree()
         CheckObject(frame, part_start, part_nr, &analyzer_xfmem, &analyzer_bpmem, &projection_set,
                     &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied);
         QString efb_copy = DescribeEFBCopy();
-        QString s = QStringLiteral("EFB Copy %1: %2").arg(layer).arg(efb_copy);
+        QString s = QStringLiteral("EFB Copy %1: %2").arg(efbcopy_count).arg(efb_copy);
         auto* layer_item = new QTreeWidgetItem({s});
         layer_item->setData(0, FRAME_ROLE, frame);
-        layer_item->setData(0, LAYER_ROLE, layer);
+        layer_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
         layer_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
-        layer++;
-        object_item = layer_item;
+        part_start = part_nr + 1;
+        QTreeWidgetItem* parent = frame_item;
+        int first = parent->childCount() - 1;
+        while (first > 0)
+        {
+          QTreeWidgetItem* item = parent->child(first);
+          if (!item->data(0, EFBCOPY_ROLE).isNull())
+            break;
+          first--;
+        }
+        first++;
+        while (first < parent->childCount())
+        {
+          layer_item->addChild(parent->takeChild(first));
+        }
+        parent->addChild(layer_item);
+        efbcopy_count++;
+        object_item = nullptr;
       }
       // We don't create dedicated labels for FramePartType::Command;
       // those are grouped with the primitive
