@@ -117,11 +117,16 @@ public:
     switch (primitive)
     {    
     case OpcodeDecoder::Primitive::GX_DRAW_QUADS:
-    case OpcodeDecoder::Primitive::GX_DRAW_QUADS_2:
       if (count == 4)
         s = QStringLiteral("Quad (1 quad)");
       else
         s = QStringLiteral("%1 quads").arg(count / 4);
+      break;
+    case OpcodeDecoder::Primitive::GX_DRAW_QUADS_2:
+      if (count == 4)
+        s = QStringLiteral("Quad (1 quad_2)");
+      else
+        s = QStringLiteral("%1 quad_2s").arg(count / 4);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLES:
       s = QStringLiteral("%1 triangles").arg(count / 3);
@@ -482,7 +487,7 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
       float hfov = atan(t) * 2;
       float vfov = atan(1 / analyzer_xfmem.projection.rawProjection[2]) * 2;
       float aspect = tan(hfov / 2) / tan(vfov / 2);
-      result += QStringLiteral("Proj FOV %1 x %2 deg, AR 16:%3, near %4 far %5")
+      result += QStringLiteral("FOV %1\302\260 x %2\302\260, AR 16:%3, near %4 far %5")
                     .arg(hfov * 360 / float(MathUtil::TAU))
                     .arg(vfov * 360 / float(MathUtil::TAU))
                     .arg(16 / aspect)
@@ -1543,10 +1548,16 @@ public:
     text = QObject::tr("No description available");
   }
 
-  OPCODE_CALLBACK(void OnNop(u32 count)) { text = QObject::tr("No description available"); }
+  OPCODE_CALLBACK(void OnNop(u32 count)) { text = QObject::tr("does nothing (No Operation)"); }
   OPCODE_CALLBACK(void OnUnknown(u8 opcode, const u8* data))
   {
-    text = QObject::tr("No description available");
+    using OpcodeDecoder::Opcode;
+    if (static_cast<Opcode>(opcode) == Opcode::GX_CMD_UNKNOWN_METRICS)
+      text = QStringLiteral("0x44 GX_CMD_UNKNOWN_METRICS\nzelda 4 swords calls it and checks the metrics registers after that");
+    else if (static_cast<Opcode>(opcode) == Opcode::GX_CMD_INVL_VC)
+      text = QStringLiteral("0x48 GX_CMD_INVL_VC\nInvalidate (vertex cache?)");
+    else
+      text = QStringLiteral("Unknown opcode %1").arg(opcode, 2, 16);
   }
 
   OPCODE_CALLBACK(void OnCommand(const u8* data, u32 size)) {}
