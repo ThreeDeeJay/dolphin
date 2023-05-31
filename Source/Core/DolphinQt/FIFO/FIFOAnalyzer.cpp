@@ -31,6 +31,7 @@
 #include "VideoCommon/CPMemory.h"
 #include "VideoCommon/OpcodeDecoding.h"
 #include "VideoCommon/VertexLoaderBase.h"
+#include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/XFStructs.h"
 
 static XFMemory analyzer_xfmem{};
@@ -448,6 +449,99 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
   return result;
 }
 
+QString FIFOAnalyzer::DescribeEFBCopy()
+{
+  u32 destAddr = analyzer_bpmem.copyTexDest << 5;
+  u32 destStride = analyzer_bpmem.copyMipMapStrideChannels << 5;
+
+  MathUtil::Rectangle<int> srcRect;
+  srcRect.left = static_cast<int>(analyzer_bpmem.copyTexSrcXY.x);
+  srcRect.top = static_cast<int>(analyzer_bpmem.copyTexSrcXY.y);
+
+  // Here Width+1 like Height, otherwise some textures are corrupted already since the native
+  // resolution.
+  srcRect.right =
+      static_cast<int>(analyzer_bpmem.copyTexSrcXY.x + analyzer_bpmem.copyTexSrcWH.x + 1);
+  srcRect.bottom =
+      static_cast<int>(analyzer_bpmem.copyTexSrcXY.y + analyzer_bpmem.copyTexSrcWH.y + 1);
+  // int copy_width = srcRect.GetWidth();
+  // int copy_height = srcRect.GetHeight();
+  if (srcRect.right > s32(EFB_WIDTH) || srcRect.bottom > s32(EFB_HEIGHT))
+  {
+    // WARN_LOG(VIDEO, "Oversized EFB copy: %dx%d (offset %d,%d stride %u)", copy_width,
+    // copy_height,
+    //         srcRect.left, srcRect.top, destStride);
+
+    // Adjust the copy size to fit within the EFB. So that we don't end up with a stretched image,
+    // instead of clamping the source rectangle, we reduce it by the over-sized amount.
+    // if (copy_width > s32(EFB_WIDTH))
+    //{
+    //  srcRect.right -= copy_width - EFB_WIDTH;
+    //  copy_width = EFB_WIDTH;
+    //}
+    // if (copy_height > s32(EFB_HEIGHT))
+    //{
+    //  srcRect.bottom -= copy_height - EFB_HEIGHT;
+    //  copy_height = EFB_HEIGHT;
+    //}
+  }
+
+  bool is_depth_copy = analyzer_bpmem.zcontrol.pixel_format == PixelFormat::Z24;
+  QString result;
+  if (is_depth_copy)
+    result = QStringLiteral("Depth ");
+  // Check if we are to copy from the EFB or draw to the XFB
+  const UPE_Copy PE_copy = analyzer_bpmem.triggerEFBCopy;
+  if (PE_copy.copy_to_xfb == 0)
+  {
+    // analyzer_bpmem.zcontrol.pixel_format to PEControl::Z24 is when the game wants to copy from
+    // ZBuffer (Zbuffer uses 24-bit Format)
+    // static constexpr CopyFilterCoefficients::Values filter_coefficients = {
+    //    {0, 0, 21, 22, 21, 0, 0}};
+    // g_texture_cache->CopyRenderTargetToTexture(
+    //    destAddr, PE_copy.tp_realFormat(), copy_width, copy_height, destStride, is_depth_copy,
+    //    srcRect, !!PE_copy.intensity_fmt, !!PE_copy.half_scale, 1.0f, 1.0f,
+    //    analyzer_bpmem.triggerEFBCopy.clamp_top, analyzer_bpmem.triggerEFBCopy.clamp_bottom,
+    //    filter_coefficients);
+    result += QStringLiteral("Copy to Tex[%1 %2]").arg(destAddr, 0, 16).arg(destStride);
+  }
+  else
+  {
+    float yScale;
+    if (PE_copy.scale_invert)
+      yScale = 256.0f / static_cast<float>(analyzer_bpmem.dispcopyyscale);
+    else
+      yScale = static_cast<float>(analyzer_bpmem.dispcopyyscale) / 256.0f;
+
+    float num_xfb_lines = 1.0f + analyzer_bpmem.copyTexSrcWH.y * yScale;
+
+    u32 height = static_cast<u32>(num_xfb_lines);
+
+    // DEBUG_LOG(VIDEO,
+    //          "RenderToXFB: destAddr: %08x | srcRect {%d %d %d %d} | fbWidth: %u | "
+    //          "fbStride: %u | fbHeight: %u | yScale: %f",
+    //          destAddr, srcRect.left, srcRect.top, srcRect.right, srcRect.bottom,
+    //          analyzer_bpmem.copyTexSrcWH.x + 1, destStride, height, yScale);
+
+    // g_texture_cache->CopyRenderTargetToTexture(
+    //    destAddr, EFBCopyFormat::XFB, copy_width, height, destStride, is_depth_copy, srcRect,
+    //    false, false, yScale, s_gammaLUT[PE_copy.gamma], analyzer_bpmem.triggerEFBCopy.clamp_top,
+    //    analyzer_bpmem.triggerEFBCopy.clamp_bottom, analyzer_bpmem.copyfilter.GetCoefficients());
+
+    result +=
+        QStringLiteral("Copy to XFB[%1 %2x%3]").arg(destAddr, 0, 16).arg(destStride).arg(height);
+  }
+  if ((!AlmostEqual(srcRect.left, 0)) || (!AlmostEqual(srcRect.top, 0)))
+    result += QStringLiteral(" (%1, %2)").arg(srcRect.left).arg(srcRect.top);
+  result += QStringLiteral(" %1x%2").arg(srcRect.GetWidth()).arg(srcRect.GetHeight());
+
+  // Clear the rectangular region after copying it.
+  if (PE_copy.clear)
+    result += QStringLiteral(", Clear");
+
+  return result;
+}
+
 QString FIFOAnalyzer::DescribeProjection(Projection* proj)
 {
   if (proj->type == ProjectionType::Orthographic)
@@ -558,7 +652,7 @@ void FIFOAnalyzer::UpdateTree()
                     &scissor_set, &scissor_offset_set, &efb_copied);
         if (efb_copied)
         {
-          QString efb_copy;
+          QString efb_copy = DescribeEFBCopy();
           QString s = QStringLiteral("EFB Copy %1: %2").arg(layer).arg(efb_copy);
           auto* layer_item = new QTreeWidgetItem({s});
           layer_item->setData(0, FRAME_ROLE, frame);
@@ -588,8 +682,16 @@ void FIFOAnalyzer::UpdateTree()
       }
       else if (part.m_type == FramePartType::EFBCopy)
       {
-        object_item = new QTreeWidgetItem({tr("EFB copy %1").arg(part_type_nr)});
-        object_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
+        CheckObject(frame, part_start, part_nr, &analyzer_xfmem, &analyzer_bpmem, &projection_set,
+                    &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied);
+        QString efb_copy = DescribeEFBCopy();
+        QString s = QStringLiteral("EFB Copy %1: %2").arg(layer).arg(efb_copy);
+        auto* layer_item = new QTreeWidgetItem({s});
+        layer_item->setData(0, FRAME_ROLE, frame);
+        layer_item->setData(0, LAYER_ROLE, layer);
+        layer_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
+        layer++;
+        object_item = layer_item;
       }
       // We don't create dedicated labels for FramePartType::Command;
       // those are grouped with the primitive
