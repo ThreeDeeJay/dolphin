@@ -747,7 +747,8 @@ void FIFOAnalyzer::UpdateTree()
         parent->addChild(layer_item);
         // if we don't clear the screen after the EFB Copy, we should still be able to see what's
         // inside it so reflect that in our tree too
-        layer_item->setExpanded((!(analyzer_bpmem.triggerEFBCopy.clear)) || analyzer_bpmem.triggerEFBCopy.copy_to_xfb);
+        layer_item->setExpanded((!(analyzer_bpmem.triggerEFBCopy.clear)) ||
+                                analyzer_bpmem.triggerEFBCopy.copy_to_xfb);
         efbcopy_count++;
         object_item = nullptr;
       }
@@ -801,6 +802,90 @@ void FIFOAnalyzer::UpdateTree()
     ASSERT(std::equal(frame_info.part_type_counts.begin(), frame_info.part_type_counts.end(),
                       part_counts.begin()));
   }
+}
+
+int ItemsFirstObject(QTreeWidgetItem* item)
+{
+  // if it's an object, problem solved
+  if (!item->data(0, PART_START_ROLE).isNull())
+    return item->data(0, PART_START_ROLE).toInt();
+  // if it has children, try the first child
+  int result = -1;
+  if (item->childCount() > 0)
+    result = ItemsFirstObject(item->child(0));
+  if (result >= 0)
+    return result;
+  // if it's a layer, and there are objects after it before the next layer
+  // try the first object after it
+  if (item->parent() && !item->data(0, LAYER_ROLE).isNull())
+  {
+    int index = item->parent()->indexOfChild(item);
+    if (index + 1 < item->parent()->childCount())
+    {
+      QTreeWidgetItem* next_item = item->parent()->child(index + 1);
+      if (next_item->data(0, LAYER_ROLE).isNull())
+        result = ItemsFirstObject(next_item);
+    }
+  }
+  // if it's an EFB copy, and there are objects before it that aren't an EFB copy
+  // keep going back to the first object before it that isn't an EFB copy
+  else if (item->parent() && !item->data(0, EFBCOPY_ROLE).isNull())
+  {
+    int index = item->parent()->indexOfChild(item);
+    while (index - 1 >= 0)
+    {
+      QTreeWidgetItem* prev_item = item->parent()->child(index - 1);
+      if (!prev_item->data(0, EFBCOPY_ROLE).isNull())
+        break;
+      index--;
+    }
+    result = ItemsFirstObject(item->parent()->child(index));
+  }
+  // either we found our first object, or we're returning -1
+  return result;
+}
+
+int ItemsLastObject(QTreeWidgetItem* item)
+{
+  // if it's an object, problem solved
+  if (!item->data(0, PART_END_ROLE).isNull())
+    return item->data(0, PART_END_ROLE).toInt();
+  // if it has children, try the last child
+  int result = -1;
+  if (item->childCount() > 0)
+    result = ItemsFirstObject(item->child(item->childCount() - 1));
+  if (result >= 0)
+    return result;
+  // if it's a layer, and there are objects after it before the next layer
+  // try the last object after it
+  if (item->parent() && !item->data(0, LAYER_ROLE).isNull())
+  {
+    int index = item->parent()->indexOfChild(item);
+    while (index + 1 < item->parent()->childCount())
+    {
+      QTreeWidgetItem* next_item = item->parent()->child(index + 1);
+      if (!next_item->data(0, LAYER_ROLE).isNull())
+        break;
+      index = index + 1;
+    }
+    QTreeWidgetItem* final_good_item = item->parent()->child(index);
+    if (final_good_item != item)
+      result = ItemsFirstObject(final_good_item);
+  }
+  // if it's an EFB copy, and there are objects before it that aren't an EFB copy
+  // get the previous one
+  else if (item->parent() && !item->data(0, EFBCOPY_ROLE).isNull())
+  {
+    int index = item->parent()->indexOfChild(item);
+    if (index - 1 >= 0)
+    {
+      QTreeWidgetItem* prev_item = item->parent()->child(index - 1);
+      if (prev_item->data(0, EFBCOPY_ROLE).isNull())
+        result = ItemsFirstObject(prev_item);
+    }
+  }
+  // either we found our last object, or we're returning -1
+  return result;
 }
 
 namespace
@@ -950,6 +1035,26 @@ void FIFOAnalyzer::UpdateDetails()
 
   if (items.isEmpty())
     return;
+
+  // Only play the selected frame and selected objects in the game window
+  const u32 frame_nr = items[0]->data(0, FRAME_ROLE).toUInt();
+  int first_object = ItemsFirstObject(items[0]);
+  int last_object = ItemsLastObject(items.last());
+  FifoPlayer& player = FifoPlayer::GetInstance();
+  player.SetObjectRangeStart(first_object);
+  player.SetObjectRangeEnd(last_object + 1);
+  if (items[0]->data(0, FRAME_ROLE).isNull())
+  {
+    player.SetFrameRangeStart(0);
+    player.SetFrameRangeEnd(items[0]->childCount());
+    return;
+  }
+  else
+  {
+    player.SetFrameRangeStart(frame_nr);
+    player.SetFrameRangeEnd(frame_nr + 1);
+  }
+
   if (!items[0]->data(0, LAYER_ROLE).isNull())
   {
     UpdateLayerDetails(items[0]);
@@ -958,12 +1063,11 @@ void FIFOAnalyzer::UpdateDetails()
   if (items[0]->data(0, PART_START_ROLE).isNull())
     return;
 
-  const u32 frame_nr = items[0]->data(0, FRAME_ROLE).toUInt();
   const u32 start_part_nr = items[0]->data(0, PART_START_ROLE).toUInt();
   const u32 end_part_nr = items[0]->data(0, PART_END_ROLE).toUInt();
 
-  const AnalyzedFrameInfo& frame_info = FifoPlayer::GetInstance().GetAnalyzedFrameInfo(frame_nr);
-  const auto& fifo_frame = FifoPlayer::GetInstance().GetFile()->GetFrame(frame_nr);
+  const AnalyzedFrameInfo& frame_info = player.GetAnalyzedFrameInfo(frame_nr);
+  const auto& fifo_frame = player.GetFile()->GetFrame(frame_nr);
 
   const u32 object_start = frame_info.parts[start_part_nr].m_start;
   const u32 object_end = frame_info.parts[end_part_nr].m_end;
