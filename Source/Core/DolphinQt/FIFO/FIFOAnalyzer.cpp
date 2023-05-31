@@ -692,7 +692,30 @@ void FIFOAnalyzer::UpdateTree()
             layer_item->setData(0, Qt::ForegroundRole, blue_palette.color(QPalette::Text));
           else
             layer_item->setData(0, Qt::ForegroundRole, green_palette.color(QPalette::Text));
-          frame_item->addChild(layer_item);
+          QTreeWidgetItem* parent = frame_item;
+          int first = parent->childCount() - 1;
+          QTreeWidgetItem* first_item = nullptr;
+          while (first >= 0)
+          {
+            first_item = parent->child(first);
+            if (!first_item->data(0, EFBCOPY_ROLE).isNull())
+              break;
+            if (!first_item->data(0, LAYER_ROLE).isNull())
+              break;
+            first--;
+          }
+          first++;
+          if (first_item && first_item->data(0, EFBCOPY_ROLE).isNull())
+          {
+            while (first < parent->childCount())
+            {
+              first_item->addChild(parent->takeChild(first));
+            }
+            // everything inside a layer can still be seen
+            // so reflect that in our tree too
+            first_item->setExpanded(true);
+          }
+          parent->addChild(layer_item);
           layer++;
         }
       }
@@ -709,7 +732,7 @@ void FIFOAnalyzer::UpdateTree()
         part_start = part_nr + 1;
         QTreeWidgetItem* parent = frame_item;
         int first = parent->childCount() - 1;
-        while (first > 0)
+        while (first >= 0)
         {
           QTreeWidgetItem* item = parent->child(first);
           if (!item->data(0, EFBCOPY_ROLE).isNull())
@@ -722,6 +745,9 @@ void FIFOAnalyzer::UpdateTree()
           layer_item->addChild(parent->takeChild(first));
         }
         parent->addChild(layer_item);
+        // if we don't clear the screen after the EFB Copy, we should still be able to see what's
+        // inside it so reflect that in our tree too
+        layer_item->setExpanded((!(analyzer_bpmem.triggerEFBCopy.clear)) || analyzer_bpmem.triggerEFBCopy.copy_to_xfb);
         efbcopy_count++;
         object_item = nullptr;
       }
@@ -738,6 +764,34 @@ void FIFOAnalyzer::UpdateTree()
 
         part_start = part_nr + 1;
       }
+#if 0
+      if (part_nr == frame_info.parts.size() - 1)
+      {
+        QTreeWidgetItem* parent = frame_item;
+        int first = parent->childCount() - 1;
+        QTreeWidgetItem* first_item = nullptr;
+        while (first >= 0)
+        {
+          first_item = parent->child(first);
+          if (!first_item->data(0, EFBCOPY_ROLE).isNull())
+            break;
+          if (!first_item->data(0, LAYER_ROLE).isNull())
+            break;
+          first--;
+        }
+        first++;
+        if (first_item && first_item->data(0, EFBCOPY_ROLE).isNull())
+        {
+          while (first < parent->childCount())
+          {
+            first_item->addChild(parent->takeChild(first));
+          }
+          // everything inside a layer can still be seen
+          // so reflect that in our tree too
+          first_item->setExpanded(true);
+        }
+      }
+#endif
     }
     recording_item->setExpanded(true);
 
