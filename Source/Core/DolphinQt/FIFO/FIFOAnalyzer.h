@@ -17,6 +17,9 @@ class QPushButton;
 class QSplitter;
 class QTextBrowser;
 class QTreeWidget;
+class QTreeWidgetItem;
+struct Viewport;
+struct Projection;
 
 class FIFOAnalyzer final : public QWidget
 {
@@ -27,6 +30,8 @@ public:
   ~FIFOAnalyzer();
 
   void Update();
+  QString DescribeViewport(Viewport* viewport);
+  QString DescribeProjection(Projection* proj);
 
 private:
   void CreateWidgets();
@@ -40,6 +45,7 @@ private:
 
   void UpdateTree();
   void UpdateDetails();
+  void UpdateLayerDetails(QTreeWidgetItem* item);
   void UpdateDescription();
 
   QTreeWidget* m_tree_widget;

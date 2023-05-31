@@ -18,6 +18,7 @@
 #include <QTreeWidgetItem>
 
 #include "Common/Assert.h"
+#include "Common/MathUtil.h"
 #include "Common/Swap.h"
 #include "Core/FifoPlayer/FifoPlayer.h"
 
@@ -36,6 +37,8 @@ constexpr int FRAME_ROLE = Qt::UserRole;
 constexpr int PART_START_ROLE = Qt::UserRole + 1;
 // Values range from 1 to number of parts
 constexpr int PART_END_ROLE = Qt::UserRole + 2;
+// Analyze initial viewport and projection matrix
+constexpr int LAYER_ROLE = Qt::UserRole + 3;
 
 FIFOAnalyzer::FIFOAnalyzer()
 {
@@ -134,6 +137,62 @@ void FIFOAnalyzer::Update()
   UpdateDescription();
 }
 
+QString FIFOAnalyzer::DescribeViewport(Viewport* viewport)
+{
+  float x = viewport->xOrig - viewport->wd;
+  float y = viewport->yOrig + viewport->ht;
+
+  float width = 2.0f * viewport->wd;
+  float height = -2.0f * viewport->ht;
+  float min_depth = (viewport->farZ - viewport->zRange) / 16777216.0f;
+  float max_depth = viewport->farZ / 16777216.0f;
+  if (width < 0.f)
+  {
+    x += width;
+    width *= -1;
+  }
+  if (height < 0.f)
+  {
+    y += height;
+    height *= -1;
+  }
+
+  return QStringLiteral("Viewport (%1, %2) %3 x %4, depth: %5 to %6")
+      .arg(x)
+      .arg(y)
+      .arg(width)
+      .arg(height)
+      .arg(min_depth)
+      .arg(max_depth);
+}
+
+QString FIFOAnalyzer::DescribeProjection(Projection* proj)
+{
+  if (proj->type == ProjectionType::Orthographic)
+  {
+    float w = 2 / proj->rawProjection[0];
+    float h = 2 / proj->rawProjection[2];
+    return QStringLiteral("2D %1 x %2").arg(w).arg(h);
+  }
+  else
+  {
+    float a = proj->rawProjection[4];
+    float b = proj->rawProjection[5];
+    float n = -b / (1 - a);
+    float f = b / a;
+    float t = 1 / proj->rawProjection[0];
+    float hfov = atan(t) * 2;
+    float vfov = atan(1 / proj->rawProjection[2]) * 2;
+    float aspect = tan(hfov / 2) / tan(vfov / 2);
+    return QStringLiteral("HFOV %1 deg, VFOV %2 deg, AR 16:%3, z %4 to %5")
+        .arg(hfov * 360 / float(MathUtil::TAU))
+        .arg(vfov * 360 / float(MathUtil::TAU))
+        .arg(16 / aspect)
+        .arg(n)
+        .arg(f);
+  }
+}
+
 void FIFOAnalyzer::UpdateTree()
 {
   m_tree_widget->clear();
@@ -145,6 +204,9 @@ void FIFOAnalyzer::UpdateTree()
   }
 
   auto* recording_item = new QTreeWidgetItem({tr("Recording")});
+  QBrush blue_brush;
+  blue_brush.setColor(Qt::GlobalColor::blue);
+  recording_item->setForeground(0, blue_brush);
 
   m_tree_widget->addTopLevelItem(recording_item);
 
@@ -166,6 +228,15 @@ void FIFOAnalyzer::UpdateTree()
 
     for (u32 part_nr = 0; part_nr < frame_info.parts.size(); part_nr++)
     {
+      if (frame == 0 && part_nr == 0)
+      {
+        int layer = 0;
+        auto* layer_item = new QTreeWidgetItem({tr("Layer %1").arg(layer)});
+        layer_item->setData(0, FRAME_ROLE, frame);
+        layer_item->setData(0, LAYER_ROLE, layer);
+        layer_item->setForeground(0, blue_brush);
+        frame_item->addChild(layer_item);
+      }
       const auto& part = frame_info.parts[part_nr];
 
       const u32 part_type_nr = part_counts[part.m_type];
@@ -190,6 +261,7 @@ void FIFOAnalyzer::UpdateTree()
         part_start = part_nr + 1;
       }
     }
+    recording_item->setExpanded(true);
 
     // We shouldn't end on a Command (it should end with an EFB copy)
     ASSERT(part_start == frame_info.parts.size());
@@ -344,7 +416,14 @@ void FIFOAnalyzer::UpdateDetails()
 
   const auto items = m_tree_widget->selectedItems();
 
-  if (items.isEmpty() || items[0]->data(0, PART_START_ROLE).isNull())
+  if (items.isEmpty())
+    return;
+  if (!items[0]->data(0, LAYER_ROLE).isNull())
+  {
+    UpdateLayerDetails(items[0]);
+    return;
+  }
+  if (items[0]->data(0, PART_START_ROLE).isNull())
     return;
 
   const u32 frame_nr = items[0]->data(0, FRAME_ROLE).toUInt();
@@ -380,6 +459,25 @@ void FIFOAnalyzer::UpdateDetails()
 
   // Needed to ensure the description updates when changing objects
   m_detail_list->setCurrentRow(0);
+}
+
+void FIFOAnalyzer::UpdateLayerDetails(QTreeWidgetItem* item)
+{
+  int frame_nr = item->data(0, FRAME_ROLE).toInt();
+  int layer_nr = item->data(0, LAYER_ROLE).toInt();
+
+  if (layer_nr != 0 || frame_nr != 0)
+    return;
+
+  // const auto& frame_info = FifoPlayer::GetInstance().GetAnalyzedFrameInfo(frame_nr);
+  // const auto& fifo_frame = FifoPlayer::GetInstance().GetFile()->GetFrame(frame_nr);
+  u32* p = FifoPlayer::GetInstance().GetFile()->GetXFRegs();
+  p -= 0x1000;
+  XFMemory* xfregs = (XFMemory*)p;
+  QString new_label = DescribeViewport(&xfregs->viewport);
+  m_detail_list->addItem(new_label);
+  new_label = DescribeProjection(&xfregs->projection);
+  m_detail_list->addItem(new_label);
 }
 
 void FIFOAnalyzer::BeginSearch()
