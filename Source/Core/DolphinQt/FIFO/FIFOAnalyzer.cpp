@@ -850,15 +850,17 @@ void FIFOAnalyzer::UpdateTree()
   }
 }
 
-int ItemsFirstObject(QTreeWidgetItem* item)
+int ItemsFirstObject(QTreeWidgetItem* item, bool allow_siblings = false)
 {
   // if it's an object, problem solved
   if (!item->data(0, PART_START_ROLE).isNull())
     return item->data(0, PART_START_ROLE).toInt();
+  if (!item->parent())
+    return 0;
   // if it has children, try the first child
   int result = INT_MAX;
   if (item->childCount() > 0)
-    result = ItemsFirstObject(item->child(0));
+    result = ItemsFirstObject(item->child(0), true);
   if (result < INT_MAX)
     return result;
   // if it's a layer, and there are objects after it before the next layer
@@ -869,8 +871,8 @@ int ItemsFirstObject(QTreeWidgetItem* item)
     if (index + 1 < item->parent()->childCount())
     {
       QTreeWidgetItem* next_item = item->parent()->child(index + 1);
-      if (next_item->data(0, LAYER_ROLE).isNull())
-        result = ItemsFirstObject(next_item);
+      if (next_item->data(0, LAYER_ROLE).isNull() || allow_siblings)
+        result = ItemsFirstObject(next_item, allow_siblings);
     }
   }
   // if it's an EFB copy, and there are objects before it that aren't an EFB copy
@@ -885,7 +887,9 @@ int ItemsFirstObject(QTreeWidgetItem* item)
         break;
       index--;
     }
-    result = ItemsFirstObject(item->parent()->child(index));
+    QTreeWidgetItem* prev_item = item->parent()->child(index);
+    if (prev_item != item)
+      result = ItemsFirstObject(prev_item);
   }
   // either we found our first object, or we're returning INT_MAX
   return result;
@@ -896,6 +900,8 @@ int ItemsLastObject(QTreeWidgetItem* item)
   // if it's an object, problem solved
   if (!item->data(0, PART_END_ROLE).isNull())
     return item->data(0, PART_END_ROLE).toInt();
+  if (!item->parent())
+    return INT_MAX - 1;
   // if it has children, try the last child
   int result = -1;
   if (item->childCount() > 0)
