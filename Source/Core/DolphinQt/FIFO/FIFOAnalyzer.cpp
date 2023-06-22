@@ -47,6 +47,8 @@ constexpr int PART_END_ROLE = Qt::UserRole + 2;
 constexpr int LAYER_ROLE = Qt::UserRole + 3;
 constexpr int EFBCOPY_ROLE = Qt::UserRole + 4;
 constexpr int TYPE_ROLE = Qt::UserRole + 5;
+constexpr int OBJECT_START_ROLE = Qt::UserRole + 6;
+constexpr int OBJECT_END_ROLE = Qt::UserRole + 6;
 
 constexpr int TYPE_WHOLE = 1;
 constexpr int TYPE_FRAME = 2;
@@ -720,6 +722,8 @@ void FIFOAnalyzer::UpdateTree()
         object_item =
             new QTreeWidgetItem({tr("Object %1: %2").arg(part_type_nr).arg(obj_desc)});
         object_item->setData(0, TYPE_ROLE, TYPE_OBJECT);
+        object_item->setData(0, OBJECT_START_ROLE, part_type_nr);
+        object_item->setData(0, OBJECT_END_ROLE, part_type_nr);
         if (efb_copied)
         {
           QString efb_copy = DescribeEFBCopy();
@@ -900,8 +904,8 @@ int ItemsFirstObject(QTreeWidgetItem* item, bool allow_siblings = false)
       return 0;
   }
   // if it's an object, problem solved
-  if (!item->data(0, PART_START_ROLE).isNull())
-    return item->data(0, PART_START_ROLE).toInt();
+  if (!item->data(0, OBJECT_START_ROLE).isNull())
+    return item->data(0, OBJECT_START_ROLE).toInt();
   // if it has children, try the first child
   int result = INT_MAX;
   if (item->childCount() > 0)
@@ -951,8 +955,8 @@ int ItemsLastObject(QTreeWidgetItem* item)
       return INT_MAX - 1;
   }
   // if it's an object, problem solved
-  if (!item->data(0, PART_END_ROLE).isNull())
-    return item->data(0, PART_END_ROLE).toInt();
+  if (!item->data(0, OBJECT_END_ROLE).isNull())
+    return item->data(0, OBJECT_END_ROLE).toInt();
   // if it has children, try the last child
   int result = -1;
   if (item->childCount() > 0)
@@ -1179,7 +1183,7 @@ void FIFOAnalyzer::UpdateDetails()
   player.SetObjectRangeStart(first_object);
   player.SetObjectRangeEnd(last_object);
   player.SetFrameRangeStart(first_frame);
-  player.SetFrameRangeEnd(last_frame + 1);
+  player.SetFrameRangeEnd(last_frame);
 
   if (!items[0]->data(0, LAYER_ROLE).isNull())
   {

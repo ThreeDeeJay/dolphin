@@ -73,10 +73,17 @@ struct FramePart
   const CPState m_cpmem;
 };
 
+struct ClearInfo
+{
+  u32 address;
+  u32 value;
+};
+
 struct AnalyzedFrameInfo
 {
   std::vector<FramePart> parts;
   Common::EnumMap<u32, FramePartType::EFBCopy> part_type_counts;
+  std::vector<ClearInfo> clears;
 
   void AddPart(FramePartType type, u32 start, u32 end, const CPState& cpmem)
   {

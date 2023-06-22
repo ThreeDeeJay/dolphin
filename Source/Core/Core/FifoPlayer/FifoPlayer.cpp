@@ -84,6 +84,7 @@ void FifoPlaybackAnalyzer::AnalyzeFrames(FifoDataFile* file,
   {
     const FifoFrameInfo& frame = file->GetFrame(frame_no);
     AnalyzedFrameInfo& analyzed = frame_info[frame_no];
+    ClearInfo clear;
 
     u32 offset = 0;
 
@@ -120,6 +121,19 @@ void FifoPlaybackAnalyzer::AnalyzeFrames(FifoDataFile* file,
         // We increase the offset beforehand, so that the trigger EFB copy command is included.
         analyzed.AddPart(FramePartType::EFBCopy, part_start, offset, analyzer.m_cpmem);
         part_start = offset;
+        // If it's not the final XFB Copy, add the EFB Clear to the list of clears
+        if (cmd_size == 5 && offset != frame.fifoData.size())
+        {
+          u32 value = Common::swap32(&frame.fifoData[size_t(offset) - 4]);
+          UPE_Copy copy;
+          copy.Hex = value;
+          if (copy.clear)
+          {
+            clear.address = offset - cmd_size;
+            clear.value = value;
+            analyzed.clears.push_back(clear);
+          }
+        }
       }
     }
 
