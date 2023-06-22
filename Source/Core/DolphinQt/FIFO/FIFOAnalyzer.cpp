@@ -415,16 +415,6 @@ QString FIFOAnalyzer::DescribeViewport(Viewport* viewport)
   float height = -2.0f * viewport->ht;
   float min_depth = (viewport->farZ - viewport->zRange) / 16777216.0f;
   float max_depth = viewport->farZ / 16777216.0f;
-  if (width < 0.f)
-  {
-    // x += width;
-    // width *= -1;
-  }
-  if (height < 0.f)
-  {
-    // y += height;
-    // height *= -1;
-  }
 
   return QStringLiteral("VP (%1, %2) %3 x %4, z %5 to %6")
       .arg(x)
