@@ -187,6 +187,7 @@ void FIFOPlayerWindow::ConnectWidgets()
   connect(m_early_memory_updates, &QCheckBox::toggled, this, &FIFOPlayerWindow::OnConfigChanged);
   connect(m_loop, &QCheckBox::toggled, this, &FIFOPlayerWindow::OnConfigChanged);
 
+  connect(m_tab_widget, &QTabWidget::currentChanged, this, &FIFOPlayerWindow::OnLimitsChanged);
   connect(m_frame_range_from, qOverload<int>(&QSpinBox::valueChanged), this,
           &FIFOPlayerWindow::OnLimitsChanged);
   connect(m_frame_range_to, qOverload<int>(&QSpinBox::valueChanged), this,
