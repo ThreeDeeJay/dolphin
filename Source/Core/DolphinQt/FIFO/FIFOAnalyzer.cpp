@@ -5,19 +5,19 @@
 
 #include <algorithm>
 
+#include <QApplication>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPalette>
 #include <QPushButton>
 #include <QSplitter>
 #include <QTextBrowser>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
-#include <QApplication>
-#include <QPalette>
 
 #include "Common/Assert.h"
 #include "Common/MathUtil.h"
@@ -55,19 +55,23 @@ constexpr int TYPE_LAYER = 5;
 constexpr int TYPE_EFBCOPY = 6;
 constexpr int TYPE_OBJECT = 7;
 
+constexpr int LINE_LENGTH = 100;
 
-QString primitive_names[] = {QStringLiteral("quads"),        QStringLiteral("Quads_2"),
-                             QStringLiteral("tris"),    QStringLiteral("tri-strip"),
-                             QStringLiteral("fan"), QStringLiteral("lines"),
-                             QStringLiteral("line-strip"),   QStringLiteral("points")};
+QString primitive_names[] = {QStringLiteral("quads"),      QStringLiteral("Quads_2"),
+                             QStringLiteral("tris"),       QStringLiteral("tri-strip"),
+                             QStringLiteral("fan"),        QStringLiteral("lines"),
+                             QStringLiteral("line-strip"), QStringLiteral("points")};
 
 namespace
 {
 class SimulateCallback : public OpcodeDecoder::Callback
 {
 public:
-  explicit SimulateCallback(CPState cpmem, XFMemory* xf, BPMemory* bp) : m_cpmem(cpmem), xfmem(xf), bpmem(bp), viewport_set(false), projection_set(false),
-        scissor_set(false), scissor_offset_set(false), efb_copied(false) {}
+  explicit SimulateCallback(CPState cpmem, XFMemory* xf, BPMemory* bp)
+      : m_cpmem(cpmem), xfmem(xf), bpmem(bp), viewport_set(false), projection_set(false),
+        scissor_set(false), scissor_offset_set(false), efb_copied(false)
+  {
+  }
 
   OPCODE_CALLBACK(void OnCP(u8 command, u32 value)) {}
 
@@ -121,56 +125,132 @@ public:
   OPCODE_CALLBACK(void OnPrimitiveCommand(OpcodeDecoder::Primitive primitive, u8 vat,
                                           u32 vertex_size, u16 num_vertices, const u8* vertex_data))
   {
-    int count = num_vertices;
-    QString s;
-    switch (primitive)
-    {    
-    case OpcodeDecoder::Primitive::GX_DRAW_QUADS:
-      if (count == 4)
-        s = QStringLiteral("Quad");
-      else
-        s = QStringLiteral("%1 quads").arg(count / 4);
-      break;
-    case OpcodeDecoder::Primitive::GX_DRAW_QUADS_2:
-      if (count == 4)
-        s = QStringLiteral("Quad_2");
-      else
-        s = QStringLiteral("%1 quad_2s").arg(count / 4);
-      break;
-    case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLES:
-      if (count == 3)
-        s = QStringLiteral("tri");
-      else
-        s = QStringLiteral("%1 tris").arg(count / 3);
-      break;
-    case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_STRIP:
-      if (count == 4)
-        s = QStringLiteral("quad-s");
-      else if (count == 0)
-        s = QStringLiteral("0-tri-strip");
-      else
-        s = QStringLiteral("%1 tri-s").arg(count - 2);
-      break;
-    case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_FAN:
-      if (count == 4)
-        s = QStringLiteral("quad-f");
-      else if (count == 0)
-        s = QStringLiteral("0-tri-f");
-      else
-        s = QStringLiteral("%1 tri-f").arg(count - 2);
-      break;
-    case OpcodeDecoder::Primitive::GX_DRAW_LINES:
-      s = QStringLiteral("%1 lines").arg(count / 2);
-      break;
-    case OpcodeDecoder::Primitive::GX_DRAW_LINE_STRIP:
-      s = QStringLiteral("%1 line-s").arg(count - 1);
-      break;
-    case OpcodeDecoder::Primitive::GX_DRAW_POINTS:
-      s = QStringLiteral("%1 points").arg(count);
-      break;
+    int prim = (int)primitive;
+
+    // We have something different now, so merge the previous similar things
+    if (nop_count || prim != prev_prim)
+    {
+      if (text.length() - broken_length > LINE_LENGTH)
+      {
+        broken_length = text.length();
+        text += QStringLiteral(",\n");
+      }
+      else if (!text.isEmpty())
+      {
+        text += QStringLiteral(", ");
+      }
+      if (drawcall_count == 1)
+        text += prev_desc;
+      else if (drawcall_count > 1)
+        text += QStringLiteral("%1 %2 in %3 %4")
+                    .arg(total_prim_count)
+                    .arg(QString::fromUtf8(prim_in_calls[prev_prim]))
+                    .arg(drawcall_count)
+                    .arg(QString::fromUtf8(prim_calls[prev_prim]));
+      if (nop_count)
+      {
+        if (drawcall_count > 0)
+          text += QStringLiteral(", ");
+        text += QStringLiteral("%1xNOP").arg(nop_count);
+      }
+      prev_desc.clear();
+      prev_prim = 0;
+      drawcall_count = 0;
+      nop_count = 0;
     }
 
-    text += QStringLiteral("%1 ").arg(s);
+    drawcall_count++;
+    prev_prim = prim;
+    prev_desc.clear();
+    int prim_count = 0;
+    int count = num_vertices;
+    switch (prim)
+    {
+    case 0:
+      prim_count = count / 4;
+      if (count == 4)
+        prev_desc = QStringLiteral("Quad (1 quad)");
+      else
+        prev_desc = QStringLiteral("%1 quads").arg(prim_count);
+      break;
+    case 1:
+      prim_count = count / 4;
+      if (count == 4)
+        prev_desc = QStringLiteral("Quad (1 quad2)");
+      else
+        prev_desc = QStringLiteral("%1 quad2s").arg(prim_count);
+      break;
+    case 2:
+      prim_count = count / 3;
+      prev_desc = QStringLiteral("%1 tris").arg(prim_count);
+      break;
+    case 3:
+      prim_count = count - 2;
+      if (count == 4)
+        prev_desc = QStringLiteral("Quad (2 tri-strip)");
+      else if (count == 0)
+        prev_desc = QStringLiteral("0 tri-strip");
+      else
+        prev_desc = QStringLiteral("%1 tri-strip").arg(prim_count);
+      break;
+    case 4:
+      prim_count = count - 2;
+      if (count == 4)
+        prev_desc = QStringLiteral("Quad (2 fan)");
+      else if (count == 0)
+        prev_desc = QStringLiteral("0 fan");
+      else
+        prev_desc = QStringLiteral("%1 fan").arg(prim_count);
+      break;
+    case 5:
+      prim_count = count / 2;
+      prev_desc = QStringLiteral("%1 lines").arg(prim_count);
+      break;
+    case 6:
+      prim_count = count - 1;
+      if (count == 0)
+        prev_desc = QStringLiteral("0 linestrip");
+      else
+        prev_desc = QStringLiteral("%1 linestrip").arg(prim_count);
+      break;
+    case 7:
+      prim_count = count;
+      prev_desc = QStringLiteral("%1 points").arg(prim_count);
+      break;
+    }
+    if (!count)
+      prim_count = 0;
+    total_prim_count += prim_count;
+  }
+
+  void finish_desc()
+  {
+    if (nop_count || -1 != prev_prim)
+    {
+      if (text.length() - broken_length > LINE_LENGTH)
+      {
+        broken_length = text.length();
+        text += QStringLiteral(",\n");
+      }
+      else if (!text.isEmpty())
+      {
+        text += QStringLiteral(", ");
+      }
+      if (drawcall_count == 1)
+        text += prev_desc;
+      else if (drawcall_count > 1)
+        text += QStringLiteral("%1 %2 in %3 %4")
+                    .arg(total_prim_count)
+                    .arg(QString::fromUtf8(prim_in_calls[prev_prim]))
+                    .arg(drawcall_count)
+                    .arg(QString::fromUtf8(prim_calls[prev_prim]));
+      if (nop_count)
+      {
+        if (drawcall_count > 0)
+          text += QStringLiteral(", ");
+        text += QStringLiteral("%1xNOP").arg(nop_count);
+      }
+    }
   }
 
   OPCODE_CALLBACK(void OnDisplayList(u32 address, u32 size))
@@ -178,13 +258,11 @@ public:
     // todo: check how to handle display lists in Fifo Player
   }
 
-  OPCODE_CALLBACK(void OnNop(u32 count)) {}
+  OPCODE_CALLBACK(void OnNop(u32 count)) { nop_count += count; }
 
   OPCODE_CALLBACK(void OnUnknown(u8 opcode, const u8* data)) {}
 
-  OPCODE_CALLBACK(void OnCommand(const u8* data, u32 size)) {
-
-  }
+  OPCODE_CALLBACK(void OnCommand(const u8* data, u32 size)) {}
 
   OPCODE_CALLBACK(CPState& GetCPState()) { return m_cpmem; }
 
@@ -198,9 +276,20 @@ public:
   XFMemory* xfmem;
   BPMemory* bpmem;
   bool projection_set, viewport_set, scissor_set, scissor_offset_set, efb_copied;
+
+  const char* prim_in_calls[8] = {"quads", "quad2s", "tris",  "tris",
+                                  "tris",  "lines",  "lines", "points"};
+  const char* prim_calls[8] = {"calls", "calls", "calls",  "strips",
+                               "fans",  "calls", "strips", "calls"};
+  // Keep track of previous similar draw calls so we can merge them
+  QString prev_desc;
+  int prev_prim = -1;
+  int drawcall_count = 0;
+  int total_prim_count = 0;
+  int nop_count = 0;
+  int broken_length = 0;
 };
 }  // namespace
-
 
 FIFOAnalyzer::FIFOAnalyzer()
 {
@@ -239,10 +328,10 @@ void FIFOAnalyzer::CreateWidgets()
   m_detail_list = new QListWidget;
   m_entry_detail_browser = new QTextBrowser;
 
-  //m_tree_widget->setObjectName("m_tree_widget");
-  //m_detail_list->setObjectName("m_detail_list");
-  //m_entry_detail_browser->setObjectName("m_entry_detail_browser");
-  //setStyleSheet(QStringLiteral("AnyQtWidget#m_tree_widget {}"));
+  // m_tree_widget->setObjectName("m_tree_widget");
+  // m_detail_list->setObjectName("m_detail_list");
+  // m_entry_detail_browser->setObjectName("m_entry_detail_browser");
+  // setStyleSheet(QStringLiteral("AnyQtWidget#m_tree_widget {}"));
 
   m_object_splitter = new QSplitter(Qt::Horizontal);
 
@@ -767,8 +856,7 @@ void FIFOAnalyzer::UpdateTree()
       else if (part.m_type == FramePartType::EFBCopy)
       {
         QString obj_desc;
-        CheckObject(frame, part_start, part_nr, m_xfmem.get(), m_bpmem.get(),
-                    &projection_set,
+        CheckObject(frame, part_start, part_nr, m_xfmem.get(), m_bpmem.get(), &projection_set,
                     &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied, &obj_desc);
         QString resolution;
         QString efb_copy = DescribeEFBCopy(&resolution);
@@ -1637,7 +1725,8 @@ public:
   {
     using OpcodeDecoder::Opcode;
     if (static_cast<Opcode>(opcode) == Opcode::GX_CMD_UNKNOWN_METRICS)
-      text = QStringLiteral("0x44 GX_CMD_UNKNOWN_METRICS\nzelda 4 swords calls it and checks the metrics registers after that");
+      text = QStringLiteral("0x44 GX_CMD_UNKNOWN_METRICS\nzelda 4 swords calls it and checks the "
+                            "metrics registers after that");
     else if (static_cast<Opcode>(opcode) == Opcode::GX_CMD_INVL_VC)
       text = QStringLiteral("0x48 GX_CMD_INVL_VC\nInvalidate (vertex cache?)");
     else
@@ -1692,8 +1781,9 @@ void FIFOAnalyzer::UpdateDescription()
   m_entry_detail_browser->setText(callback.text);
 }
 
-void FIFOAnalyzer::CheckObject(u32 frame_nr, u32 start_part_nr, u32 end_part_nr, XFMemory* xf, BPMemory* bp,
-                               bool* projection_set, bool* viewport_set, bool* scissor_set, bool* scissor_offset_set, bool* efb_copied,
+void FIFOAnalyzer::CheckObject(u32 frame_nr, u32 start_part_nr, u32 end_part_nr, XFMemory* xf,
+                               BPMemory* bp, bool* projection_set, bool* viewport_set,
+                               bool* scissor_set, bool* scissor_offset_set, bool* efb_copied,
                                QString* desc)
 {
   *projection_set = false;
@@ -1726,6 +1816,7 @@ void FIFOAnalyzer::CheckObject(u32 frame_nr, u32 start_part_nr, u32 end_part_nr,
     object_offset += OpcodeDecoder::RunCommand(&fifo_frame.fifoData[object_start + start_offset],
                                                object_size - start_offset, callback);
   }
+  callback.finish_desc();
 
   *projection_set = callback.projection_set;
   *viewport_set = callback.viewport_set;
