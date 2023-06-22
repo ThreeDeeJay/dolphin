@@ -728,8 +728,9 @@ void FIFOAnalyzer::UpdateTree()
         QString obj_desc;
         CheckObject(frame, part_start, part_nr, m_xfmem.get(), m_bpmem.get(), &projection_set,
                     &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied, &obj_desc);
-        object_item =
-            new QTreeWidgetItem({tr("Object %1: %2").arg(part_type_nr).arg(obj_desc)});
+        QString adjectives = GetAdjectives();
+        object_item = new QTreeWidgetItem(
+            {tr("Object %1:\t%2  \t%3").arg(part_type_nr).arg(obj_desc).arg(adjectives)});
         object_item->setData(0, TYPE_ROLE, TYPE_OBJECT);
         object_item->setData(0, OBJECT_START_ROLE, part_type_nr);
         object_item->setData(0, OBJECT_END_ROLE, part_type_nr);
@@ -882,6 +883,40 @@ void FIFOAnalyzer::FoldLayer(QTreeWidgetItem* parent)
     // so reflect that in our tree too
     first_item->setExpanded(true);
   }
+}
+
+QString FIFOAnalyzer::GetAdjectives()
+{
+  std::string a;
+  if (m_bpmem->genMode.zfreeze)
+    a += "zfreeze ";
+  if (m_bpmem->genMode.flat_shading)
+    a += "flat-shading? ";
+  if (((m_bpmem->zmode.testenable) && (m_bpmem->zmode.func == CompareMode::Never)) ||
+      (m_bpmem->genMode.cullmode == CullMode::All))
+    a += "not-drawn ";
+  else if ((!m_bpmem->zmode.testenable) || (m_bpmem->zmode.func == CompareMode::Always))
+    a += "always-on-top ";
+  if (m_bpmem->genMode.cullmode == CullMode::None)
+    a += "double-sided ";
+  else if (m_bpmem->genMode.cullmode == CullMode::Front)
+    a += "backface ";
+  if (m_bpmem->fog.c_proj_fsel.fsel != FogType::Off)
+    a += "fogged ";
+  if (m_bpmem->blendmode.logicopenable)
+    a += "logic-op ";
+  bool alpha_blended =
+      (m_bpmem->blendmode.blendenable && m_bpmem->blendmode.srcfactor == SrcBlendFactor::SrcAlpha &&
+       m_bpmem->blendmode.dstfactor == DstBlendFactor::InvSrcAlpha);
+  bool additive =
+      (m_bpmem->blendmode.blendenable && m_bpmem->blendmode.srcfactor == SrcBlendFactor::SrcAlpha &&
+       m_bpmem->blendmode.dstfactor == DstBlendFactor::One);
+  if (alpha_blended)
+    a += "alpha-blended ";
+  else if (additive)
+    a += "additive ";
+
+  return QString::fromStdString(a);
 }
 
 int ItemsFirstObject(QTreeWidgetItem* item, bool allow_siblings = false)

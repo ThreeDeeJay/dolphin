@@ -56,6 +56,7 @@ private:
                    bool* projection_set, bool* viewport_set, bool* scissor_set,
                    bool* scissor_offset_set, bool* efb_copied, QString* desc);
   void FoldLayer(QTreeWidgetItem* parent);
+  QString GetAdjectives();
 
   QTreeWidget* m_tree_widget;
   QListWidget* m_detail_list;
