@@ -36,7 +36,7 @@ public:
   QString DescribeScissor();
   QString DescribeProjection(Projection* proj);
   QString DescribeLayer(bool set_viewport, bool set_scissor, bool set_projection);
-  QString DescribeEFBCopy();
+  QString DescribeEFBCopy(QString* resolution = nullptr);
 
 private:
   void CreateWidgets();

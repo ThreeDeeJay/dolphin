@@ -510,7 +510,7 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
   return result;
 }
 
-QString FIFOAnalyzer::DescribeEFBCopy()
+QString FIFOAnalyzer::DescribeEFBCopy(QString* resolution)
 {
   u32 destAddr = m_bpmem->copyTexDest << 5;
   u32 destStride = m_bpmem->copyMipMapStrideChannels << 5;
@@ -590,9 +590,16 @@ QString FIFOAnalyzer::DescribeEFBCopy()
     result +=
         QStringLiteral("Copy to XFB[%1 %2x%3]").arg(destAddr, 0, 16).arg(destStride).arg(height);
   }
+  QString res;
   if ((!AlmostEqual(srcRect.left, 0)) || (!AlmostEqual(srcRect.top, 0)))
-    result += QStringLiteral(" (%1, %2)").arg(srcRect.left).arg(srcRect.top);
-  result += QStringLiteral(" %1x%2").arg(srcRect.GetWidth()).arg(srcRect.GetHeight());
+    res += QStringLiteral(" (%1, %2)").arg(srcRect.left).arg(srcRect.top);
+  res += QStringLiteral(" %1x%2").arg(srcRect.GetWidth()).arg(srcRect.GetHeight());
+  result += res;
+  if (resolution)
+    *resolution = res;
+
+  if (PE_copy.intensity_fmt)
+    result += QStringLiteral(", Intensity");
 
   // Clear the rectangular region after copying it.
   if (PE_copy.clear)
@@ -726,31 +733,6 @@ void FIFOAnalyzer::UpdateTree()
         object_item->setData(0, TYPE_ROLE, TYPE_OBJECT);
         object_item->setData(0, OBJECT_START_ROLE, part_type_nr);
         object_item->setData(0, OBJECT_END_ROLE, part_type_nr);
-        if (efb_copied)
-        {
-          QString efb_copy = DescribeEFBCopy();
-          QString s = QStringLiteral("EFB Copy %1: %2").arg(efbcopy_count).arg(efb_copy);
-          auto* layer_item = new QTreeWidgetItem({s});
-          layer_item->setData(0, FRAME_ROLE, frame);
-          layer_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
-          layer_item->setData(0, Qt::ForegroundRole, green_palette.color(QPalette::Text));
-          QTreeWidgetItem* parent = frame_item;
-          int first = parent->childCount() - 1;
-          while (first > 0)
-          {
-            QTreeWidgetItem* item = parent->child(first);
-            if (!item->data(0, EFBCOPY_ROLE).isNull())
-              break;
-            first--;
-          }
-          first++;
-          while (first < parent->childCount())
-          {
-            layer_item->addChild(parent->takeChild(first));
-          }
-          parent->addChild(layer_item);
-          efbcopy_count++;
-        }
         if (scissor_offset_set)
         {
           scissor_set = true;
@@ -780,18 +762,22 @@ void FIFOAnalyzer::UpdateTree()
         CheckObject(frame, part_start, part_nr, m_xfmem.get(), m_bpmem.get(),
                     &projection_set,
                     &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied, &obj_desc);
-        QString efb_copy = DescribeEFBCopy();
+        QString resolution;
+        QString efb_copy = DescribeEFBCopy(&resolution);
         QString s = QStringLiteral("EFB Copy %1: %2").arg(efbcopy_count).arg(efb_copy);
-        auto* layer_item = new QTreeWidgetItem({s});
-        layer_item->setData(0, TYPE_ROLE, TYPE_EFBCOPY);
-        layer_item->setData(0, FRAME_ROLE, frame);
-        layer_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
-        layer_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
+        auto* efbcopy_item = new QTreeWidgetItem({s});
+        efbcopy_item->setData(0, TYPE_ROLE, TYPE_EFBCOPY);
+        efbcopy_item->setData(0, FRAME_ROLE, frame);
+        efbcopy_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
+        efbcopy_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
         QTreeWidgetItem* parent = frame_item;
         if (part_nr == frame_info.parts.size() - 1)
         {
-          layer_item->setData(0, PART_START_ROLE, part_start);
-          layer_item->setData(0, PART_END_ROLE, part_nr);
+          efbcopy_item->setData(0, PART_START_ROLE, part_start);
+          efbcopy_item->setData(0, PART_END_ROLE, part_nr);
+          efbcopy_item->setText(0, QStringLiteral("XFB Copy: %1").arg(efb_copy));
+          efbcopy_item->setData(0, TYPE_ROLE, TYPE_XFBCOPY);
+          frame_item->setText(0, QStringLiteral("Frame %1: %2").arg(frame).arg(resolution));
         }
         else
         {
@@ -807,14 +793,15 @@ void FIFOAnalyzer::UpdateTree()
           first++;
           while (first < parent->childCount())
           {
-            layer_item->addChild(parent->takeChild(first));
+            efbcopy_item->addChild(parent->takeChild(first));
           }
         }
-        parent->addChild(layer_item);
+        parent->addChild(efbcopy_item);
         // if we don't clear the screen after the EFB Copy, we should still be able to see what's
         // inside it so reflect that in our tree too
-        layer_item->setExpanded((!(m_bpmem->triggerEFBCopy.clear)) ||
-                                m_bpmem->triggerEFBCopy.copy_to_xfb);
+        // efbcopy_item->setExpanded((!(m_bpmem->triggerEFBCopy.clear)) ||
+        //                        m_bpmem->triggerEFBCopy.copy_to_xfb);
+        efbcopy_item->setExpanded(false);
         efbcopy_count++;
         part_start = part_nr + 1;
         object_item = nullptr;
