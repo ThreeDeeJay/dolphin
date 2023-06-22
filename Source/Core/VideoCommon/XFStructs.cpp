@@ -304,7 +304,7 @@ void PreprocessIndexedXF(CPArray array, u32 index, u16 address, u8 size)
   system.GetFifo().PushFifoAuxBuffer(new_data, buf_size);
 }
 
-std::pair<std::string, std::string> GetXFRegInfo(u32 address, u32 value)
+std::pair<std::string, std::string> GetXFRegInfo(u32 address, u32 value, int &color)
 {
 // Macro to set the register name and make sure it was written correctly via compile time assertion
 #define RegName(reg) ((void)(reg), #reg)
@@ -375,44 +375,57 @@ std::pair<std::string, std::string> GetXFRegInfo(u32 address, u32 value)
                           fmt::format("Matrix index B:\n{}", TMatrixIndexB{.Hex = value}));
 
   case XFMEM_SETVIEWPORT:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETVIEWPORT + 0),
                           fmt::format("Viewport width: {}", Common::BitCast<float>(value)));
   case XFMEM_SETVIEWPORT + 1:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETVIEWPORT + 1),
                           fmt::format("Viewport height: {}", Common::BitCast<float>(value)));
   case XFMEM_SETVIEWPORT + 2:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETVIEWPORT + 2),
                           fmt::format("Viewport z range: {}", Common::BitCast<float>(value)));
   case XFMEM_SETVIEWPORT + 3:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETVIEWPORT + 3),
                           fmt::format("Viewport x origin: {}", Common::BitCast<float>(value)));
   case XFMEM_SETVIEWPORT + 4:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETVIEWPORT + 4),
                           fmt::format("Viewport y origin: {}", Common::BitCast<float>(value)));
   case XFMEM_SETVIEWPORT + 5:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETVIEWPORT + 5),
                           fmt::format("Viewport far z: {}", Common::BitCast<float>(value)));
     break;
 
   case XFMEM_SETPROJECTION:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETPROJECTION + 0),
                           fmt::format("Projection[0]: {}", Common::BitCast<float>(value)));
   case XFMEM_SETPROJECTION + 1:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETPROJECTION + 1),
                           fmt::format("Projection[1]: {}", Common::BitCast<float>(value)));
   case XFMEM_SETPROJECTION + 2:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETPROJECTION + 2),
                           fmt::format("Projection[2]: {}", Common::BitCast<float>(value)));
   case XFMEM_SETPROJECTION + 3:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETPROJECTION + 3),
                           fmt::format("Projection[3]: {}", Common::BitCast<float>(value)));
   case XFMEM_SETPROJECTION + 4:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETPROJECTION + 4),
                           fmt::format("Projection[4]: {}", Common::BitCast<float>(value)));
   case XFMEM_SETPROJECTION + 5:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETPROJECTION + 5),
                           fmt::format("Projection[5]: {}", Common::BitCast<float>(value)));
   case XFMEM_SETPROJECTION + 6:
+    color = 3;
     return std::make_pair(RegName(XFMEM_SETPROJECTION + 6),
                           fmt::to_string(static_cast<ProjectionType>(value)));
 
@@ -568,8 +581,9 @@ std::string GetXFMemDescription(u32 address, u32 value)
 }
 
 std::pair<std::string, std::string> GetXFTransferInfo(u16 base_address, u8 transfer_size,
-                                                      const u8* data)
+                                                      const u8* data, int &color)
 {
+  color = 0;
   if (base_address > XFMEM_REGISTERS_END)
   {
     return std::make_pair("Invalid XF Transfer", "Base address past end of address space");
@@ -578,7 +592,7 @@ std::pair<std::string, std::string> GetXFTransferInfo(u16 base_address, u8 trans
   {
     // Write directly to a single register
     const u32 value = Common::swap32(data);
-    return GetXFRegInfo(base_address, value);
+    return GetXFRegInfo(base_address, value, color);
   }
 
   // More complicated cases
@@ -629,7 +643,7 @@ std::pair<std::string, std::string> GetXFTransferInfo(u16 base_address, u8 trans
     {
       const u32 value = Common::swap32(data);
 
-      const auto [regname, regdesc] = GetXFRegInfo(address, value);
+      const auto [regname, regdesc] = GetXFRegInfo(address, value, color);
       fmt::format_to(std::back_inserter(desc), "{}\n{}\n", regname, regdesc);
 
       data += 4;

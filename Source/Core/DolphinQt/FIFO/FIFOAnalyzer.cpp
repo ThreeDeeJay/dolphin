@@ -627,49 +627,16 @@ QString FIFOAnalyzer::DescribeEFBCopy(QString* resolution)
   srcRect.left = static_cast<int>(m_bpmem->copyTexSrcXY.x);
   srcRect.top = static_cast<int>(m_bpmem->copyTexSrcXY.y);
 
-  // Here Width+1 like Height, otherwise some textures are corrupted already since the native
-  // resolution.
   srcRect.right = static_cast<int>(m_bpmem->copyTexSrcXY.x + m_bpmem->copyTexSrcWH.x + 1);
   srcRect.bottom = static_cast<int>(m_bpmem->copyTexSrcXY.y + m_bpmem->copyTexSrcWH.y + 1);
-  // int copy_width = srcRect.GetWidth();
-  // int copy_height = srcRect.GetHeight();
-  if (srcRect.right > s32(EFB_WIDTH) || srcRect.bottom > s32(EFB_HEIGHT))
-  {
-    // WARN_LOG(VIDEO, "Oversized EFB copy: %dx%d (offset %d,%d stride %u)", copy_width,
-    // copy_height,
-    //         srcRect.left, srcRect.top, destStride);
-
-    // Adjust the copy size to fit within the EFB. So that we don't end up with a stretched image,
-    // instead of clamping the source rectangle, we reduce it by the over-sized amount.
-    // if (copy_width > s32(EFB_WIDTH))
-    //{
-    //  srcRect.right -= copy_width - EFB_WIDTH;
-    //  copy_width = EFB_WIDTH;
-    //}
-    // if (copy_height > s32(EFB_HEIGHT))
-    //{
-    //  srcRect.bottom -= copy_height - EFB_HEIGHT;
-    //  copy_height = EFB_HEIGHT;
-    //}
-  }
 
   bool is_depth_copy = m_bpmem->zcontrol.pixel_format == PixelFormat::Z24;
   QString result;
   if (is_depth_copy)
     result = QStringLiteral("Depth ");
-  // Check if we are to copy from the EFB or draw to the XFB
   const UPE_Copy PE_copy = m_bpmem->triggerEFBCopy;
   if (PE_copy.copy_to_xfb == 0)
   {
-    // analyzer_bpmem.zcontrol.pixel_format to PEControl::Z24 is when the game wants to copy from
-    // ZBuffer (Zbuffer uses 24-bit Format)
-    // static constexpr CopyFilterCoefficients::Values filter_coefficients = {
-    //    {0, 0, 21, 22, 21, 0, 0}};
-    // g_texture_cache->CopyRenderTargetToTexture(
-    //    destAddr, PE_copy.tp_realFormat(), copy_width, copy_height, destStride, is_depth_copy,
-    //    srcRect, !!PE_copy.intensity_fmt, !!PE_copy.half_scale, 1.0f, 1.0f,
-    //    analyzer_bpmem.triggerEFBCopy.clamp_top, analyzer_bpmem.triggerEFBCopy.clamp_bottom,
-    //    filter_coefficients);
     result += QStringLiteral("Copy to Tex[%1 %2]").arg(destAddr, 0, 16).arg(destStride);
   }
   else
@@ -684,17 +651,6 @@ QString FIFOAnalyzer::DescribeEFBCopy(QString* resolution)
 
     u32 height = static_cast<u32>(num_xfb_lines);
 
-    // DEBUG_LOG(VIDEO,
-    //          "RenderToXFB: destAddr: %08x | srcRect {%d %d %d %d} | fbWidth: %u | "
-    //          "fbStride: %u | fbHeight: %u | yScale: %f",
-    //          destAddr, srcRect.left, srcRect.top, srcRect.right, srcRect.bottom,
-    //          m_bpmem->copyTexSrcWH.x + 1, destStride, height, yScale);
-
-    // g_texture_cache->CopyRenderTargetToTexture(
-    //    destAddr, EFBCopyFormat::XFB, copy_width, height, destStride, is_depth_copy, srcRect,
-    //    false, false, yScale, s_gammaLUT[PE_copy.gamma], m_bpmem->triggerEFBCopy.clamp_top,
-    //    m_bpmem->triggerEFBCopy.clamp_bottom, m_bpmem->copyfilter.GetCoefficients());
-
     result +=
         QStringLiteral("Copy to XFB[%1 %2x%3]").arg(destAddr, 0, 16).arg(destStride).arg(height);
   }
@@ -708,8 +664,17 @@ QString FIFOAnalyzer::DescribeEFBCopy(QString* resolution)
 
   if (PE_copy.intensity_fmt)
     result += QStringLiteral(", Intensity");
-
-  // Clear the rectangular region after copying it.
+  if (PE_copy.half_scale)
+    result += QStringLiteral(", Half-scale");
+  if (PE_copy.clamp_top && PE_copy.clamp_bottom)
+    result += QStringLiteral(", Clamp top & bottom");
+  else
+  {
+    if (PE_copy.clamp_bottom)
+      result += QStringLiteral(", Clamp bottom");
+    if (PE_copy.clamp_top)
+      result += QStringLiteral(", Clamp top");
+  }
   if (PE_copy.clear)
     result += QStringLiteral(", Clear");
 
@@ -761,10 +726,10 @@ void FIFOAnalyzer::UpdateTree()
   // projection/viewport changes will be blue
   color.setRgb(0, 80, 255);
   blue_palette.setColor(QPalette::Text, color);
-  // scissor changes without a projection/viewport change will be green
+  // all kinds of EFB copies (EFB copies/XFB copies/frames) will be red
   color.setRgb(200, 0, 0);
   red_palette.setColor(QPalette::Text, color);
-  // all kinds of EFB copies (EFB copies/XFB copies/frames) will be red
+  // scissor changes without a projection/viewport change will be green
   color.setRgb(10, 180, 0);
   green_palette.setColor(QPalette::Text, color);
 
@@ -1155,7 +1120,7 @@ public:
 
   OPCODE_CALLBACK(void OnXF(u16 address, u8 count, const u8* data))
   {
-    const auto [name, desc] = GetXFTransferInfo(address, count, data);
+    const auto [name, desc] = GetXFTransferInfo(address, count, data, color);
     ASSERT(!name.empty());
 
     const u32 command = address | ((count - 1) << 16);
@@ -1176,6 +1141,32 @@ public:
   {
     const auto [name, desc] = GetBPRegInfo(command, value);
     ASSERT(!name.empty());
+    switch (command)
+    {
+    case BPMEM_DISPLAYCOPYFILTER:
+    case BPMEM_DISPLAYCOPYFILTER + 1:
+    case BPMEM_DISPLAYCOPYFILTER + 2:
+    case BPMEM_DISPLAYCOPYFILTER + 3:
+    case BPMEM_SETDRAWDONE:
+    case BPMEM_EFB_TL:
+    case BPMEM_EFB_WH:
+    case BPMEM_EFB_ADDR:
+    case BPMEM_MIPMAP_STRIDE:
+    case BPMEM_COPYYSCALE:
+    case BPMEM_CLEAR_AR:
+    case BPMEM_CLEAR_GB:
+    case BPMEM_CLEAR_Z:
+    case BPMEM_TRIGGER_EFB_COPY:
+      color = 1;
+      break;
+    case BPMEM_SCISSORTL:
+    case BPMEM_SCISSORBR:
+    case BPMEM_SCISSOROFFSET:
+      color = 2;
+      break;
+    default:
+      color = 0;
+    }
 
     text = QStringLiteral("BP  %1  %2  %3")
                .arg(command, 2, 16, QLatin1Char('0'))
@@ -1256,6 +1247,7 @@ public:
   }
 
   QString text;
+  int color;
   CPState m_cpmem;
 };
 }  // namespace
@@ -1334,6 +1326,18 @@ void FIFOAnalyzer::UpdateDetails()
 
   // Actual updating of details starts here
 
+  QPalette blue_palette, green_palette, red_palette;
+  QColor color;
+  // projection/viewport changes will be blue
+  color.setRgb(0, 80, 255);
+  blue_palette.setColor(QPalette::Text, color);
+  // all kinds of EFB copies (EFB copies/XFB copies/frames) will be red
+  color.setRgb(200, 0, 0);
+  red_palette.setColor(QPalette::Text, color);
+  // scissor changes without a projection/viewport change will be green
+  color.setRgb(10, 180, 0);
+  green_palette.setColor(QPalette::Text, color);
+
   const u32 frame_nr = items[0]->data(0, FRAME_ROLE).toUInt();
   const u32 start_part_nr = items[0]->data(0, PART_START_ROLE).toUInt();
   const u32 end_part_nr = items[0]->data(0, PART_END_ROLE).toUInt();
@@ -1362,7 +1366,14 @@ void FIFOAnalyzer::UpdateDetails()
     QString new_label =
         QStringLiteral("%1:  ").arg(object_start + start_offset, 8, 16, QLatin1Char('0')) +
         callback.text;
-    m_detail_list->addItem(new_label);
+    auto* detail_item = new QListWidgetItem({new_label});
+    if (callback.color == 1)
+      detail_item->setData(Qt::ForegroundRole, red_palette.color(QPalette::Text));
+    else if (callback.color == 2)
+      detail_item->setData(Qt::ForegroundRole, green_palette.color(QPalette::Text));
+    else if (callback.color == 3)
+      detail_item->setData(Qt::ForegroundRole, blue_palette.color(QPalette::Text));
+    m_detail_list->addItem(detail_item);
   }
 
   // Needed to ensure the description updates when changing objects
@@ -1569,7 +1580,8 @@ public:
 
   OPCODE_CALLBACK(void OnXF(u16 address, u8 count, const u8* data))
   {
-    const auto [name, desc] = GetXFTransferInfo(address, count, data);
+    int color;
+    const auto [name, desc] = GetXFTransferInfo(address, count, data, color);
     ASSERT(!name.empty());
 
     text = QObject::tr("XF register ");
