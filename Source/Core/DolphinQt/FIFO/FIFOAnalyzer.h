@@ -88,4 +88,6 @@ private:
   std::vector<int> m_object_data_offsets;
 
   std::vector<SearchResult> m_search_results;
+  std::unique_ptr<XFMemory> m_xfmem;
+  std::unique_ptr<BPMemory> m_bpmem;
 };

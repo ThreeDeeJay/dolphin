@@ -34,9 +34,6 @@
 #include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/XFStructs.h"
 
-static XFMemory analyzer_xfmem{};
-static BPMemory analyzer_bpmem{};
-
 // Values range from 0 to number of frames - 1
 constexpr int FRAME_ROLE = Qt::UserRole;
 // Values range from 0 to number of parts - 1
@@ -303,8 +300,8 @@ void FIFOAnalyzer::Update()
 
 QString FIFOAnalyzer::DescribeViewport(Viewport* viewport)
 {
-  float x = viewport->xOrig - viewport->wd - analyzer_bpmem.scissorOffset.x * 2;
-  float y = viewport->yOrig + viewport->ht - analyzer_bpmem.scissorOffset.y * 2;
+  float x = viewport->xOrig - viewport->wd - m_bpmem->scissorOffset.x * 2;
+  float y = viewport->yOrig + viewport->ht - m_bpmem->scissorOffset.y * 2;
 
   float width = 2.0f * viewport->wd;
   float height = -2.0f * viewport->ht;
@@ -332,12 +329,11 @@ QString FIFOAnalyzer::DescribeViewport(Viewport* viewport)
 
 QString FIFOAnalyzer::DescribeScissor()
 {
-  const int xoff = analyzer_bpmem.scissorOffset.x * 2;
-  const int yoff = analyzer_bpmem.scissorOffset.y * 2;
+  const int xoff = m_bpmem->scissorOffset.x * 2;
+  const int yoff = m_bpmem->scissorOffset.y * 2;
 
-  MathUtil::Rectangle<int> r(analyzer_bpmem.scissorTL.x - xoff, analyzer_bpmem.scissorTL.y - yoff,
-                             analyzer_bpmem.scissorBR.x - xoff + 1,
-                             analyzer_bpmem.scissorBR.y - yoff + 1);
+  MathUtil::Rectangle<int> r(m_bpmem->scissorTL.x - xoff, m_bpmem->scissorTL.y - yoff,
+                             m_bpmem->scissorBR.x - xoff + 1, m_bpmem->scissorBR.y - yoff + 1);
 
   return QStringLiteral("Scissor (%1, %2) %3 x %4")
       .arg(r.left)
@@ -367,11 +363,11 @@ static bool AlmostEqual(MathUtil::Rectangle<float> r, MathUtil::Rectangle<float>
 QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool set_projection)
 {
   QString result;
-  const int xoff = analyzer_bpmem.scissorOffset.x * 2;
-  const int yoff = analyzer_bpmem.scissorOffset.y * 2;
-  MathUtil::Rectangle<float> r_scissor(
-      analyzer_bpmem.scissorTL.x - xoff, analyzer_bpmem.scissorTL.y - yoff,
-      analyzer_bpmem.scissorBR.x - xoff + 1, analyzer_bpmem.scissorBR.y - yoff + 1);
+  const int xoff = m_bpmem->scissorOffset.x * 2;
+  const int yoff = m_bpmem->scissorOffset.y * 2;
+  MathUtil::Rectangle<float> r_scissor(m_bpmem->scissorTL.x - xoff, m_bpmem->scissorTL.y - yoff,
+                                       m_bpmem->scissorBR.x - xoff + 1,
+                                       m_bpmem->scissorBR.y - yoff + 1);
   if (!set_scissor)
   {
     r_scissor.left = -1;
@@ -380,11 +376,11 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
     r_scissor.bottom = -1;
   }
 
-  float x = analyzer_xfmem.viewport.xOrig - analyzer_xfmem.viewport.wd - xoff;
-  float y = analyzer_xfmem.viewport.yOrig + analyzer_xfmem.viewport.ht - yoff;
+  float x = m_xfmem->viewport.xOrig - m_xfmem->viewport.wd - xoff;
+  float y = m_xfmem->viewport.yOrig + m_xfmem->viewport.ht - yoff;
 
-  float width = 2.0f * analyzer_xfmem.viewport.wd;
-  float height = -2.0f * analyzer_xfmem.viewport.ht;
+  float width = 2.0f * m_xfmem->viewport.wd;
+  float height = -2.0f * m_xfmem->viewport.ht;
   if (width < 0.f)
   {
     x += width;
@@ -396,8 +392,8 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
     height *= -1;
   }
   MathUtil::Rectangle<float> r_viewport(x, y, x + width, y + height);
-  float min_depth = (analyzer_xfmem.viewport.farZ - analyzer_xfmem.viewport.zRange) / 16777216.0f;
-  float max_depth = analyzer_xfmem.viewport.farZ / 16777216.0f;
+  float min_depth = (m_xfmem->viewport.farZ - m_xfmem->viewport.zRange) / 16777216.0f;
+  float max_depth = m_xfmem->viewport.farZ / 16777216.0f;
   if (!set_viewport)
   {
     r_viewport.left = -2;
@@ -408,12 +404,12 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
     max_depth = 1;
   }
 
-  if (set_projection && analyzer_xfmem.projection.type == ProjectionType::Orthographic)
+  if (set_projection && m_xfmem->projection.type == ProjectionType::Orthographic)
   {
-    width = 2 / analyzer_xfmem.projection.rawProjection[0];
-    height = -2 / analyzer_xfmem.projection.rawProjection[2];
-    x = (-analyzer_xfmem.projection.rawProjection[1] - 1) * width / 2;
-    y = (analyzer_xfmem.projection.rawProjection[3] - 1) * height / 2;
+    width = 2 / m_xfmem->projection.rawProjection[0];
+    height = -2 / m_xfmem->projection.rawProjection[2];
+    x = (-m_xfmem->projection.rawProjection[1] - 1) * width / 2;
+    y = (m_xfmem->projection.rawProjection[3] - 1) * height / 2;
   }
   else
   {
@@ -482,7 +478,7 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
   {
     if (set_viewport || set_scissor)
       result += QStringLiteral(" ");
-    if (analyzer_xfmem.projection.type == ProjectionType::Orthographic)
+    if (m_xfmem->projection.type == ProjectionType::Orthographic)
     {
       result += QStringLiteral("Proj 2D");
       if (r_projection.left != 0 || r_projection.top != 0)
@@ -491,13 +487,13 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
     }
     else
     {
-      float a = analyzer_xfmem.projection.rawProjection[4];
-      float b = analyzer_xfmem.projection.rawProjection[5];
+      float a = m_xfmem->projection.rawProjection[4];
+      float b = m_xfmem->projection.rawProjection[5];
       float n = -b / (1 - a);
       float f = b / a;
-      float t = 1 / analyzer_xfmem.projection.rawProjection[0];
+      float t = 1 / m_xfmem->projection.rawProjection[0];
       float hfov = atan(t) * 2;
-      float vfov = atan(1 / analyzer_xfmem.projection.rawProjection[2]) * 2;
+      float vfov = atan(1 / m_xfmem->projection.rawProjection[2]) * 2;
       float aspect = tan(hfov / 2) / tan(vfov / 2);
       result += QStringLiteral("FOV %1\302\260 x %2\302\260, AR 16:%3, near %4 far %5")
                     .arg(hfov * 360 / float(MathUtil::TAU))
@@ -516,19 +512,17 @@ QString FIFOAnalyzer::DescribeLayer(bool set_viewport, bool set_scissor, bool se
 
 QString FIFOAnalyzer::DescribeEFBCopy()
 {
-  u32 destAddr = analyzer_bpmem.copyTexDest << 5;
-  u32 destStride = analyzer_bpmem.copyMipMapStrideChannels << 5;
+  u32 destAddr = m_bpmem->copyTexDest << 5;
+  u32 destStride = m_bpmem->copyMipMapStrideChannels << 5;
 
   MathUtil::Rectangle<int> srcRect;
-  srcRect.left = static_cast<int>(analyzer_bpmem.copyTexSrcXY.x);
-  srcRect.top = static_cast<int>(analyzer_bpmem.copyTexSrcXY.y);
+  srcRect.left = static_cast<int>(m_bpmem->copyTexSrcXY.x);
+  srcRect.top = static_cast<int>(m_bpmem->copyTexSrcXY.y);
 
   // Here Width+1 like Height, otherwise some textures are corrupted already since the native
   // resolution.
-  srcRect.right =
-      static_cast<int>(analyzer_bpmem.copyTexSrcXY.x + analyzer_bpmem.copyTexSrcWH.x + 1);
-  srcRect.bottom =
-      static_cast<int>(analyzer_bpmem.copyTexSrcXY.y + analyzer_bpmem.copyTexSrcWH.y + 1);
+  srcRect.right = static_cast<int>(m_bpmem->copyTexSrcXY.x + m_bpmem->copyTexSrcWH.x + 1);
+  srcRect.bottom = static_cast<int>(m_bpmem->copyTexSrcXY.y + m_bpmem->copyTexSrcWH.y + 1);
   // int copy_width = srcRect.GetWidth();
   // int copy_height = srcRect.GetHeight();
   if (srcRect.right > s32(EFB_WIDTH) || srcRect.bottom > s32(EFB_HEIGHT))
@@ -551,12 +545,12 @@ QString FIFOAnalyzer::DescribeEFBCopy()
     //}
   }
 
-  bool is_depth_copy = analyzer_bpmem.zcontrol.pixel_format == PixelFormat::Z24;
+  bool is_depth_copy = m_bpmem->zcontrol.pixel_format == PixelFormat::Z24;
   QString result;
   if (is_depth_copy)
     result = QStringLiteral("Depth ");
   // Check if we are to copy from the EFB or draw to the XFB
-  const UPE_Copy PE_copy = analyzer_bpmem.triggerEFBCopy;
+  const UPE_Copy PE_copy = m_bpmem->triggerEFBCopy;
   if (PE_copy.copy_to_xfb == 0)
   {
     // analyzer_bpmem.zcontrol.pixel_format to PEControl::Z24 is when the game wants to copy from
@@ -574,11 +568,11 @@ QString FIFOAnalyzer::DescribeEFBCopy()
   {
     float yScale;
     if (PE_copy.scale_invert)
-      yScale = 256.0f / static_cast<float>(analyzer_bpmem.dispcopyyscale);
+      yScale = 256.0f / static_cast<float>(m_bpmem->dispcopyyscale);
     else
-      yScale = static_cast<float>(analyzer_bpmem.dispcopyyscale) / 256.0f;
+      yScale = static_cast<float>(m_bpmem->dispcopyyscale) / 256.0f;
 
-    float num_xfb_lines = 1.0f + analyzer_bpmem.copyTexSrcWH.y * yScale;
+    float num_xfb_lines = 1.0f + m_bpmem->copyTexSrcWH.y * yScale;
 
     u32 height = static_cast<u32>(num_xfb_lines);
 
@@ -586,12 +580,12 @@ QString FIFOAnalyzer::DescribeEFBCopy()
     //          "RenderToXFB: destAddr: %08x | srcRect {%d %d %d %d} | fbWidth: %u | "
     //          "fbStride: %u | fbHeight: %u | yScale: %f",
     //          destAddr, srcRect.left, srcRect.top, srcRect.right, srcRect.bottom,
-    //          analyzer_bpmem.copyTexSrcWH.x + 1, destStride, height, yScale);
+    //          m_bpmem->copyTexSrcWH.x + 1, destStride, height, yScale);
 
     // g_texture_cache->CopyRenderTargetToTexture(
     //    destAddr, EFBCopyFormat::XFB, copy_width, height, destStride, is_depth_copy, srcRect,
-    //    false, false, yScale, s_gammaLUT[PE_copy.gamma], analyzer_bpmem.triggerEFBCopy.clamp_top,
-    //    analyzer_bpmem.triggerEFBCopy.clamp_bottom, analyzer_bpmem.copyfilter.GetCoefficients());
+    //    false, false, yScale, s_gammaLUT[PE_copy.gamma], m_bpmem->triggerEFBCopy.clamp_top,
+    //    m_bpmem->triggerEFBCopy.clamp_bottom, m_bpmem->copyfilter.GetCoefficients());
 
     result +=
         QStringLiteral("Copy to XFB[%1 %2x%3]").arg(destAddr, 0, 16).arg(destStride).arg(height);
@@ -666,17 +660,25 @@ void FIFOAnalyzer::UpdateTree()
 
   const u32 frame_count = file->GetFrameCount();
 
+  // keep track of the registers and which relevant ones have been modified
+  {
+    if (!m_xfmem)
+      m_xfmem = std::make_unique<XFMemory>();
+    if (!m_bpmem)
+      m_bpmem = std::make_unique<BPMemory>();
+    u32* p = file->GetXFMem();
+    memcpy(m_xfmem.get(), p, 0x1000 * sizeof(u32));
+    p = file->GetXFRegs();
+    memcpy(&m_xfmem->error, p, 0x58 * sizeof(u32));
+    p = file->GetBPMem();
+    memcpy(m_bpmem.get(), p, sizeof(BPMemory));
+  }
+
   bool projection_set = false;
   bool viewport_set = false;
   bool scissor_set = false;
   bool scissor_offset_set = false;
   bool efb_copied = false;
-  u32* p = FifoPlayer::GetInstance().GetFile()->GetXFMem();
-  memcpy(&analyzer_xfmem, p, 0x1000 * sizeof(u32));
-  p = FifoPlayer::GetInstance().GetFile()->GetXFRegs();
-  memcpy(&analyzer_xfmem.error, p, 0x58 * sizeof(u32));
-  p = FifoPlayer::GetInstance().GetFile()->GetBPMem();
-  memcpy(&analyzer_bpmem, p, sizeof(analyzer_bpmem));
 
   for (u32 frame = 0; frame < frame_count; frame++)
   {
@@ -717,7 +719,7 @@ void FIFOAnalyzer::UpdateTree()
       if (part.m_type == FramePartType::PrimitiveData)
       {
         QString obj_desc;
-        CheckObject(frame, part_start, part_nr, &analyzer_xfmem, &analyzer_bpmem, &projection_set,
+        CheckObject(frame, part_start, part_nr, m_xfmem.get(), m_bpmem.get(), &projection_set,
                     &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied, &obj_desc);
         object_item =
             new QTreeWidgetItem({tr("Object %1: %2").arg(part_type_nr).arg(obj_desc)});
@@ -775,7 +777,8 @@ void FIFOAnalyzer::UpdateTree()
       else if (part.m_type == FramePartType::EFBCopy)
       {
         QString obj_desc;
-        CheckObject(frame, part_start, part_nr, &analyzer_xfmem, &analyzer_bpmem, &projection_set,
+        CheckObject(frame, part_start, part_nr, m_xfmem.get(), m_bpmem.get(),
+                    &projection_set,
                     &viewport_set, &scissor_set, &scissor_offset_set, &efb_copied, &obj_desc);
         QString efb_copy = DescribeEFBCopy();
         QString s = QStringLiteral("EFB Copy %1: %2").arg(efbcopy_count).arg(efb_copy);
@@ -810,8 +813,8 @@ void FIFOAnalyzer::UpdateTree()
         parent->addChild(layer_item);
         // if we don't clear the screen after the EFB Copy, we should still be able to see what's
         // inside it so reflect that in our tree too
-        layer_item->setExpanded((!(analyzer_bpmem.triggerEFBCopy.clear)) ||
-                                analyzer_bpmem.triggerEFBCopy.copy_to_xfb);
+        layer_item->setExpanded((!(m_bpmem->triggerEFBCopy.clear)) ||
+                                m_bpmem->triggerEFBCopy.copy_to_xfb);
         efbcopy_count++;
         part_start = part_nr + 1;
         object_item = nullptr;
