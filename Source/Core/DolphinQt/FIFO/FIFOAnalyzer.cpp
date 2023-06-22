@@ -126,6 +126,14 @@ public:
                                           u32 vertex_size, u16 num_vertices, const u8* vertex_data))
   {
     int prim = (int)primitive;
+    // Special handling for quads made of triangles
+    if (num_vertices == 4)
+    {
+      if (primitive == OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_STRIP)
+        prim = 8;
+      else if (primitive == OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_FAN)
+        prim = 9;
+    }
 
     // We have something different now, so merge the previous similar things
     if (nop_count || prim != prev_prim)
@@ -133,7 +141,7 @@ public:
       if (text.length() - broken_length > LINE_LENGTH)
       {
         broken_length = text.length();
-        text += QStringLiteral(",\n");
+        text += QStringLiteral(",\n\t");
       }
       else if (!text.isEmpty())
       {
@@ -169,14 +177,14 @@ public:
     case 0:
       prim_count = count / 4;
       if (count == 4)
-        prev_desc = QStringLiteral("Quad (1 quad)");
+        prev_desc = QStringLiteral("quad (1 quad)");
       else
         prev_desc = QStringLiteral("%1 quads").arg(prim_count);
       break;
     case 1:
       prim_count = count / 4;
       if (count == 4)
-        prev_desc = QStringLiteral("Quad (1 quad2)");
+        prev_desc = QStringLiteral("quad (1 quad2)");
       else
         prev_desc = QStringLiteral("%1 quad2s").arg(prim_count);
       break;
@@ -186,18 +194,14 @@ public:
       break;
     case 3:
       prim_count = count - 2;
-      if (count == 4)
-        prev_desc = QStringLiteral("Quad (2 tri-strip)");
-      else if (count == 0)
+      if (count == 0)
         prev_desc = QStringLiteral("0 tri-strip");
       else
         prev_desc = QStringLiteral("%1 tri-strip").arg(prim_count);
       break;
     case 4:
       prim_count = count - 2;
-      if (count == 4)
-        prev_desc = QStringLiteral("Quad (2 fan)");
-      else if (count == 0)
+      if (count == 0)
         prev_desc = QStringLiteral("0 fan");
       else
         prev_desc = QStringLiteral("%1 fan").arg(prim_count);
@@ -217,6 +221,14 @@ public:
       prim_count = count;
       prev_desc = QStringLiteral("%1 points").arg(prim_count);
       break;
+    case 8:
+      prim_count = 1;
+      prev_desc = QStringLiteral("quad (2 tri-strip)");
+      break;
+    case 9:
+      prim_count = 1;
+      prev_desc = QStringLiteral("quad (2 tri-fan)");
+      break;
     }
     if (!count)
       prim_count = 0;
@@ -230,7 +242,7 @@ public:
       if (text.length() - broken_length > LINE_LENGTH)
       {
         broken_length = text.length();
-        text += QStringLiteral(",\n");
+        text += QStringLiteral(",\n\t");
       }
       else if (!text.isEmpty())
       {
@@ -277,10 +289,10 @@ public:
   BPMemory* bpmem;
   bool projection_set, viewport_set, scissor_set, scissor_offset_set, efb_copied;
 
-  const char* prim_in_calls[8] = {"quads", "quad2s", "tris",  "tris",
-                                  "tris",  "lines",  "lines", "points"};
-  const char* prim_calls[8] = {"calls", "calls", "calls",  "strips",
-                               "fans",  "calls", "strips", "calls"};
+  const char* prim_in_calls[10] = {"quads", "quad2s", "tris",  "tris",  "tris",
+                                   "lines", "lines",  "points", "quads", "quads"};
+  const char* prim_calls[10] = {"calls", "calls", "calls",  "strips", "fans",
+                                "calls", "strips", "calls", "tri-strips", "tri-fans"};
   // Keep track of previous similar draw calls so we can merge them
   QString prev_desc;
   int prev_prim = -1;
