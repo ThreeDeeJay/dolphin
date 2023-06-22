@@ -56,10 +56,10 @@ constexpr int TYPE_EFBCOPY = 6;
 constexpr int TYPE_OBJECT = 7;
 
 
-QString primitive_names[] = {QStringLiteral("Quads"),        QStringLiteral("Quads_2"),
-                             QStringLiteral("Triangles"),    QStringLiteral("Triangle Strip"),
-                             QStringLiteral("Triangle Fan"), QStringLiteral("Lines"),
-                             QStringLiteral("Line Strip"),   QStringLiteral("Points")};
+QString primitive_names[] = {QStringLiteral("quads"),        QStringLiteral("Quads_2"),
+                             QStringLiteral("tris"),    QStringLiteral("tri-strip"),
+                             QStringLiteral("fan"), QStringLiteral("lines"),
+                             QStringLiteral("line-strip"),   QStringLiteral("points")};
 
 namespace
 {
@@ -127,36 +127,43 @@ public:
     {    
     case OpcodeDecoder::Primitive::GX_DRAW_QUADS:
       if (count == 4)
-        s = QStringLiteral("Quad (1 quad)");
+        s = QStringLiteral("Quad");
       else
         s = QStringLiteral("%1 quads").arg(count / 4);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_QUADS_2:
       if (count == 4)
-        s = QStringLiteral("Quad (1 quad_2)");
+        s = QStringLiteral("Quad_2");
       else
         s = QStringLiteral("%1 quad_2s").arg(count / 4);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLES:
-      s = QStringLiteral("%1 triangles").arg(count / 3);
+      if (count == 3)
+        s = QStringLiteral("tri");
+      else
+        s = QStringLiteral("%1 tris").arg(count / 3);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_STRIP:
       if (count == 4)
-        s = QStringLiteral("Quad (2 triangle strip)");
+        s = QStringLiteral("quad-s");
+      else if (count == 0)
+        s = QStringLiteral("0-tri-strip");
       else
-        s = QStringLiteral("%1 triangle strip").arg(count - 2);
+        s = QStringLiteral("%1 tri-s").arg(count - 2);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_TRIANGLE_FAN:
       if (count == 4)
-        s = QStringLiteral("Quad (2 triangle fan)");
+        s = QStringLiteral("quad-f");
+      else if (count == 0)
+        s = QStringLiteral("0-tri-f");
       else
-        s = QStringLiteral("%1 triangle fan").arg(count - 2);
+        s = QStringLiteral("%1 tri-f").arg(count - 2);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_LINES:
       s = QStringLiteral("%1 lines").arg(count / 2);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_LINE_STRIP:
-      s = QStringLiteral("%1 line strip").arg(count - 1);
+      s = QStringLiteral("%1 line-s").arg(count - 1);
       break;
     case OpcodeDecoder::Primitive::GX_DRAW_POINTS:
       s = QStringLiteral("%1 points").arg(count);
@@ -911,8 +918,13 @@ QString FIFOAnalyzer::GetAdjectives()
   bool additive =
       (m_bpmem->blendmode.blendenable && m_bpmem->blendmode.srcfactor == SrcBlendFactor::SrcAlpha &&
        m_bpmem->blendmode.dstfactor == DstBlendFactor::One);
+  bool full_additive =
+      (m_bpmem->blendmode.blendenable && m_bpmem->blendmode.srcfactor == SrcBlendFactor::One &&
+       m_bpmem->blendmode.dstfactor == DstBlendFactor::One);
   if (alpha_blended)
     a += "alpha-blended ";
+  else if (full_additive)
+    a += "100%-additive ";
   else if (additive)
     a += "additive ";
 
