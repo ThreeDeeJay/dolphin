@@ -97,6 +97,7 @@ public:
         viewport_set = true;
 
       address++;
+      data += 4;
       transferSize--;
     }
   }
@@ -767,19 +768,19 @@ void FIFOAnalyzer::UpdateTree()
     int layer = 0;
     int efbcopy_count = 0;
 
+    // add projection and viewport inherited from previous frame as layer 0
+    {
+      QString s = QStringLiteral("inherited: %1").arg(DescribeLayer(true, true, true));
+      auto* layer_item = new QTreeWidgetItem({s});
+      layer_item->setData(0, FRAME_ROLE, frame);
+      layer_item->setData(0, LAYER_ROLE, layer);
+      layer_item->setData(0, Qt::ForegroundRole, blue_palette.color(QPalette::Text));
+      frame_item->addChild(layer_item);
+      layer++;
+    }
+
     for (u32 part_nr = 0; part_nr < frame_info.parts.size(); part_nr++)
     {
-      // add projection and viewport inherited from previous frame as layer 0
-      if (part_nr == 0)
-      {
-        QString s = QStringLiteral("inherited: %1").arg(DescribeLayer(true, true, true));
-        auto* layer_item = new QTreeWidgetItem({s});
-        layer_item->setData(0, FRAME_ROLE, frame);
-        layer_item->setData(0, LAYER_ROLE, layer);
-        layer_item->setData(0, Qt::ForegroundRole, blue_palette.color(QPalette::Text));
-        frame_item->addChild(layer_item);
-        layer++;
-      }
       const auto& part = frame_info.parts[part_nr];
 
       const u32 part_type_nr = part_counts[part.m_type];
@@ -832,13 +833,13 @@ void FIFOAnalyzer::UpdateTree()
         efbcopy_item->setData(0, TYPE_ROLE, TYPE_EFBCOPY);
         efbcopy_item->setData(0, FRAME_ROLE, frame);
         efbcopy_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
+        efbcopy_item->setData(0, PART_START_ROLE, part_start);
+        efbcopy_item->setData(0, PART_END_ROLE, part_nr);
         efbcopy_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
         QTreeWidgetItem* parent = frame_item;
         FoldLayer(parent);
         if (part_nr == frame_info.parts.size() - 1)
         {
-          efbcopy_item->setData(0, PART_START_ROLE, part_start);
-          efbcopy_item->setData(0, PART_END_ROLE, part_nr);
           efbcopy_item->setText(0, QStringLiteral("XFB Copy: %1").arg(efb_copy));
           efbcopy_item->setData(0, TYPE_ROLE, TYPE_XFBCOPY);
           frame_item->setText(0, QStringLiteral("Frame %1: %2").arg(frame).arg(resolution));
@@ -944,7 +945,8 @@ void FIFOAnalyzer::FoldLayer(QTreeWidgetItem* parent)
     }
     // everything inside a layer can still be seen
     // so reflect that in our tree too
-    first_item->setExpanded(true);
+    //first_item->setExpanded(true);
+    first_item->setExpanded(false);
   }
 }
 
