@@ -834,6 +834,7 @@ void FIFOAnalyzer::UpdateTree()
         efbcopy_item->setData(0, EFBCOPY_ROLE, efbcopy_count);
         efbcopy_item->setData(0, Qt::ForegroundRole, red_palette.color(QPalette::Text));
         QTreeWidgetItem* parent = frame_item;
+        FoldLayer(parent);
         if (part_nr == frame_info.parts.size() - 1)
         {
           efbcopy_item->setData(0, PART_START_ROLE, part_start);
@@ -844,7 +845,6 @@ void FIFOAnalyzer::UpdateTree()
         }
         else
         {
-          FoldLayer(parent);
           int first = parent->childCount() - 1;
           while (first > 0)
           {
@@ -921,6 +921,7 @@ void FIFOAnalyzer::UpdateTree()
   }
 }
 
+// Fold everything after the last layer into that layer
 void FIFOAnalyzer::FoldLayer(QTreeWidgetItem* parent)
 {
   int first = parent->childCount() - 1;
