@@ -687,7 +687,7 @@ dolphin_make_imported_target_if_missing(LibLZMA::LibLZMA LIBLZMA)
 
 dolphin_find_optional_system_library_pkgconfig(ZSTD libzstd>=1.4.0 zstd::zstd Externals/zstd)
 
-dolphin_find_optional_system_library_pkgconfig(ZLIB zlib>=1.3.1 ZLIB::ZLIB Externals/zlib-ng)
+dolphin_find_optional_system_library_pkgconfig(ZLIB zlib>=1.3.1 ZLIB::ZLIB Externals/zlib-rs)
 
 dolphin_find_optional_system_library_pkgconfig(minizip-ng
   "minizip-ng>=4.0.4" MINIZIP::minizip-ng Externals/minizip-ng
