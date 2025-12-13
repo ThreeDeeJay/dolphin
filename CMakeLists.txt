@@ -723,6 +723,16 @@ dolphin_find_optional_system_library(CURL Externals/curl)
 
 if(NOT ANDROID)
   dolphin_find_optional_system_library(HIDAPI Externals/hidapi)
+  if(ENABLE_QT)
+    if(UNIX AND NOT APPLE)
+      list(APPEND QT_EXTRA_MODULES DBus)
+    endif()
+    dolphin_find_optional_system_library(Qt6 Externals/Qt 6.2 COMPONENTS Core Gui Widgets Svg ${QT_EXTRA_MODULES})
+    if (Qt6_VERSION VERSION_GREATER_EQUAL 6.10.0)
+      # GuiPrivate is needed to #include qplatformnativeinterface.h in MainWindow.cpp with Qt 6.10+.
+      find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
+    endif()
+  endif()
 endif()
 
 if(USE_DISCORD_PRESENCE)
@@ -888,3 +898,12 @@ list(APPEND CPACK_SOURCE_IGNORE_FILES "${CMAKE_BINARY_DIR}")
 # CPack must be included after the CPACK_* variables are set in order for those
 # variables to take effect.
 Include(CPack)
+
+# TODO:
+# - Fix Windows building with ninja
+# - Fix Windows taskbar icon
+# - Fix cross-compiling with Externals Qt
+# - Optimize Qt FEATURE flags for minimal build
+# - Check if find_Package(Qt6 ...) can be in Externals/Qt
+# - See if static Qt build can be fixed
+# - See if DLLs are correct with upstream

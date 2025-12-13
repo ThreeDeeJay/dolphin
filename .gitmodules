@@ -130,11 +130,13 @@
 	path = Externals/wil
 	url = https://github.com/microsoft/wil.git
 	shallow = true
-[submodule "Externals/Qt"]
-	path = Externals/Qt
-	url = https://github.com/JoshuaVandaele/ext-win-qt.git
-	shallow = true
 [submodule "Externals/xz/xz"]
 	path = Externals/xz/xz
 	url = https://github.com/tukaani-project/xz.git
 	shallow = true
+[submodule "Externals/Qt/qtbase"]
+	path = Externals/Qt/qtbase
+	url = https://code.qt.io/qt/qtbase.git
+[submodule "Externals/Qt/qtsvg"]
+	path = Externals/Qt/qtsvg
+	url = https://code.qt.io/qt/qtsvg.git

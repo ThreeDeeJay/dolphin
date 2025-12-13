@@ -39,8 +39,7 @@ if ((DEFINED CMAKE_ANDROID_ARCH_ABI AND CMAKE_ANDROID_ARCH_ABI MATCHES "x86|x86_
   target_link_libraries(uicommon PRIVATE bdisasm)
 endif()
 
-if(UNIX AND NOT APPLE AND NOT ANDROID AND ENABLE_QT)
-  find_package(Qt6 REQUIRED COMPONENTS DBus)
+if(Qt6DBus_FOUND)
   target_sources(uicommon PRIVATE DBusUtils.cpp)
   target_compile_definitions(uicommon PRIVATE -DHAVE_QTDBUS=1)
   target_link_libraries(uicommon PUBLIC Qt6::DBus)

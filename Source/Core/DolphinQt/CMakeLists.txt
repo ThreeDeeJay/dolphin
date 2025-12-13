@@ -3,28 +3,11 @@ if(POLICY CMP0084)
   cmake_policy(SET CMP0084 NEW)
 endif()
 
-if (WIN32)
-  if(_M_ARM_64)
-    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/Externals/Qt/Qt6.5.1/ARM64")
-  else()
-    list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/Externals/Qt/Qt6.5.1/x64")
-  endif()
-endif()
-
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Svg)
-
 if (Qt6_VERSION VERSION_GREATER_EQUAL 6.10.0)
   # GuiPrivate is needed to #include qplatformnativeinterface.h in MainWindow.cpp with Qt 6.10+.
   set(NEED_QT_GUI_PRIVATE_COMPONENT ON)
   find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
 endif()
-
-message(STATUS "Found Qt version ${Qt6_VERSION}")
-
-set_property(TARGET Qt6::Core PROPERTY INTERFACE_COMPILE_FEATURES "")
 
 add_executable(dolphin-emu
   AboutDialog.cpp
@@ -457,12 +440,18 @@ PRIVATE
   implot
 )
 
-if (NEED_QT_GUI_PRIVATE_COMPONENT)
+if(Qt6GuiPrivate_FOUND)
   target_link_libraries(dolphin-emu
   PRIVATE
     Qt6::GuiPrivate
   )
 endif()
+
+set_target_properties(dolphin-emu
+  PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
 
 if (WIN32)
   target_link_libraries(dolphin-emu
@@ -556,6 +545,7 @@ if (WIN32)
                                  --no-translations
                                  --no-compiler-runtime
                                  --no-system-d3d-compiler
+                                 --no-system-dxc-compiler
                                  --no-opengl-sw
                                  "$<TARGET_FILE:dolphin-emu>"
   )

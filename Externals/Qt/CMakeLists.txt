@@ -1,0 +1,148 @@
+include(ExternalProject)
+
+set(QT_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/Qt)
+set(QT_BASE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/qtbase)
+set(QT_BASE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/qtbase)
+set(QT_TOOLS_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/qtbase)
+set(QT_TOOLS_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/qttools)
+set(QT_SVG_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/qtsvg)
+set(QT_SVG_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/qtsvg)
+
+file(MAKE_DIRECTORY ${QT_INSTALL_DIR})
+
+find_program(CCACHE_BIN NAMES ccache sccache)
+if(${CCACHE_BIN} IN_LIST CMAKE_CXX_COMPILER_LAUNCHER)
+    set(QT_USE_CCACHE ON)
+else()
+    set(QT_USE_CCACHE OFF)
+endif()
+
+# - We don't build Qt statically to avoid issues with conflicting symbols 
+#   (e.g. Qt uses VMA and exports its symbols) which conflicts with Dolphin's own usage of VMA.
+#   TODO: -DFEATURE_vulkan?
+# - Ninja is used as the generator since Qt officially supports it best, and Visual Studio 18 2026 currently doesn't work.
+set(QT_CONFIG_ARG
+  -GNinja
+  -DCMAKE_BUILD_TYPE=Release
+  -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+  -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+  -DCMAKE_INSTALL_PREFIX=${QT_INSTALL_DIR}
+  -DQT_USE_CCACHE=${QT_USE_CCACHE}
+  -DQT_BUILD_EXAMPLES=OFF
+  -DQT_BUILD_BENCHMARKS=OFF
+  -DQT_BUILD_TESTS=OFF
+  -DQT_INSTALL_EXAMPLES_SOURCES=OFF
+  -Wno-dev
+  --log-level=STATUS
+)
+
+set(QT_BASE_CONFIG_ARG
+  -DFEATURE_network=OFF
+  -DFEATURE_opengl=OFF
+  -DFEATURE_printsupport=OFF
+  -DFEATURE_sql=OFF
+  -DFEATURE_vulkan=OFF
+  -DFEATURE_testlib=OFF
+  -DFEATURE_xml=OFF
+  -DFEATURE_concurrent=OFF
+  -DFEATURE_androiddeployqt=OFF
+  -DFEATURE_qmake=OFF
+  -DFEATURE_cxx20=ON
+)
+
+set(QT_MODULE_CONFIG_ARG
+  -DQt6_DIR=${QT_INSTALL_DIR}/lib/cmake/Qt6
+  -DQT_HOST_PATH_CMAKE_DIR=${QT_INSTALL_DIR}/lib/cmake
+)
+
+set(QT_TOOLS_CONFIG_ARG ${QT_CONFIG_ARG} ${QT_BASE_CONFIG_ARG}
+  -DFEATURE_gui=OFF
+  -DFEATURE_widgets=OFF
+  -DFEATURE_dbus=OFF
+)
+
+set(QT_BASE_CONFIG_ARG ${QT_CONFIG_ARG} ${QT_BASE_CONFIG_ARG}
+  -DFEATURE_gui=ON
+  -DFEATURE_widgets=ON
+  -DINPUT_opengl=no
+)
+
+find_package(XCB QUIET)
+if(XCB_FOUND)
+  list(APPEND QT_BASE_CONFIG_ARG -DFEATURE_xcb=ON)
+endif()
+
+find_package(Wayland QUIET)
+if(Wayland_FOUND)
+  list(APPEND QT_BASE_CONFIG_ARG -DFEATURE_wayland=ON)
+endif()
+
+if(LINUX)
+  list(APPEND QT_BASE_CONFIG_ARG -DFEATURE_linuxfb=ON)
+endif()
+
+set(QT_SVG_CONFIG_ARG ${QT_CONFIG_ARG} ${QT_MODULE_CONFIG_ARG})
+
+if(UNIX AND NOT APPLE)
+  list(APPEND QT_BASE_CONFIG_ARG
+    -DFEATURE_dbus=ON
+  )
+  list(APPEND QT_EXTRA_MODULES DBus)
+else()
+  list(APPEND QT_BASE_CONFIG_ARG
+    -DFEATURE_dbus=OFF
+  )
+endif()
+
+set(QT_MODULES TOOLS BASE SVG)
+
+foreach(MODULE ${QT_MODULES})
+    set(QT_MODULE_SOURCE_DIR ${QT_${MODULE}_SOURCE_DIR})
+    set(QT_MODULE_BINARY_DIR ${QT_${MODULE}_BINARY_DIR})
+    set(QT_MODULE_CONFIG_ARG ${QT_${MODULE}_CONFIG_ARG})
+
+    file(MAKE_DIRECTORY ${QT_MODULE_BINARY_DIR})
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -DCMAKE_INSTALL_MESSAGE=LAZY ${QT_MODULE_CONFIG_ARG} ${QT_MODULE_SOURCE_DIR}
+        WORKING_DIRECTORY ${QT_MODULE_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} --build ${QT_MODULE_BINARY_DIR} --parallel ${CMAKE_BUILD_PARALLEL_LEVEL}
+        WORKING_DIRECTORY ${QT_MODULE_BINARY_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} --install ${QT_MODULE_BINARY_DIR}
+        WORKING_DIRECTORY ${QT_INSTALL_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+endforeach()
+
+set(QT_HOST_PATH "${QT_INSTALL_DIR}")
+
+find_package(Qt6 REQUIRED
+  COMPONENTS
+    Core
+    Widgets
+    Gui
+    Svg
+    ${QT_EXTRA_MODULES}
+  PATHS
+    ${QT_INSTALL_DIR}
+)
+
+set_property(TARGET
+    Qt6::Core
+    Qt6::Widgets
+    Qt6::Gui
+    Qt6::Svg
+    PROPERTY IMPORTED_GLOBAL TRUE
+)
+
+foreach(MODULE ${QT_EXTRA_MODULES})
+  set_property(TARGET Qt6::${MODULE} PROPERTY IMPORTED_GLOBAL TRUE)
+endforeach()
