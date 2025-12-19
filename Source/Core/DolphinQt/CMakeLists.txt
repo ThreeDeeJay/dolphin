@@ -3,12 +3,6 @@ if(POLICY CMP0084)
   cmake_policy(SET CMP0084 NEW)
 endif()
 
-if (Qt6_VERSION VERSION_GREATER_EQUAL 6.10.0)
-  # GuiPrivate is needed to #include qplatformnativeinterface.h in MainWindow.cpp with Qt 6.10+.
-  set(NEED_QT_GUI_PRIVATE_COMPONENT ON)
-  find_package(Qt6 REQUIRED COMPONENTS GuiPrivate)
-endif()
-
 add_executable(dolphin-emu
   AboutDialog.cpp
   AboutDialog.h
@@ -439,13 +433,6 @@ PRIVATE
   imgui
   implot
 )
-
-if(Qt6GuiPrivate_FOUND)
-  target_link_libraries(dolphin-emu
-  PRIVATE
-    Qt6::GuiPrivate
-  )
-endif()
 
 set_target_properties(dolphin-emu
   PROPERTIES

@@ -11,6 +11,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QIcon>
 #include <QMimeData>
 #include <QStackedWidget>
@@ -30,7 +31,7 @@
 #include "QtUtils/SignalDaemon.h"
 #endif
 
-#ifndef _WIN32
+#if defined(Q_OS_UNIX) && QT_VERSION < QT_VERSION_CHECK(6, 7, 0)
 #include <qpa/qplatformnativeinterface.h>
 #endif
 
@@ -190,20 +191,49 @@ static WindowSystemInfo GetWindowSystemInfo(QWindow* window)
   WindowSystemInfo wsi;
   wsi.type = GetWindowSystemType();
 
-  // Our Win32 Qt external doesn't have the private API.
-#if defined(WIN32) || defined(__APPLE__) || defined(__HAIKU__)
-  wsi.render_window = window ? reinterpret_cast<void*>(window->winId()) : nullptr;
-  wsi.render_surface = wsi.render_window;
-#else
-  QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
-  wsi.display_connection = pni->nativeResourceForWindow("display", window);
-  if (wsi.type == WindowSystemType::Wayland)
-    wsi.render_window = window ? pni->nativeResourceForWindow("surface", window) : nullptr;
+  if (!window)
+  {
+    return wsi;
+  };
+
+#if defined(Q_OS_UNIX)
+#if QT_CONFIG(wayland)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+  if (auto wl = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>())
+  {
+    wsi.display_connection = wl->display();
+    if (auto screen = window->screen())
+    {
+      if (auto wl_screen = screen->nativeInterface<QNativeInterface::QWaylandScreen>())
+      {
+        wsi.render_window = wl_screen->output();
+      }
+    }
+  }
   else
-    wsi.render_window = window ? reinterpret_cast<void*>(window->winId()) : nullptr;
+#else
+  if (wsi.type == WindowSystemType::Wayland)
+  {
+    QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
+    wsi.display_connection = pni->nativeResourceForWindow("display", window);
+    wsi.render_window = window ? pni->nativeResourceForWindow("surface", window) : nullptr;
+  }
+  else
+#endif  // QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+#endif  // QT_CONFIG(wayland)
+#if QT_CONFIG(xcb)
+      if (auto* x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>())
+  {
+    wsi.display_connection = x11->display();
+    wsi.render_window = reinterpret_cast<void*>(window->winId());
+  }
+#endif  // QT_CONFIG(xcb)
+#else
+  wsi.render_window = reinterpret_cast<void*>(window->winId());
+#endif  // defined(Q_OS_UNIX)
+
   wsi.render_surface = wsi.render_window;
-#endif
-  wsi.render_surface_scale = window ? static_cast<float>(window->devicePixelRatio()) : 1.0f;
+  wsi.render_surface_scale = static_cast<float>(window->devicePixelRatio());
 
   return wsi;
 }
@@ -249,14 +279,12 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
   InitControllers();
   ConnectHotkeys();
 
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
   connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this,
           [this](Qt::ColorScheme colorScheme) {
             Settings::Instance().ApplyStyle();
             if (m_skylander_window)
               m_skylander_window->RefreshList();
           });
-#endif
 
 #ifdef USE_RETRO_ACHIEVEMENTS
   connect(m_game_list, &GameList::OpenAchievementSettings, this,
@@ -1304,10 +1332,11 @@ void MainWindow::ShowSettingsWindow()
 #ifdef HAVE_XRANDR
     if (GetWindowSystemType() == WindowSystemType::X11)
     {
-      m_xrr_config = std::make_unique<X11Utils::XRRConfiguration>(
-          static_cast<Display*>(QGuiApplication::platformNativeInterface()->nativeResourceForWindow(
-              "display", windowHandle())),
-          winId());
+      if (auto* x11 = qGuiApp->nativeInterface<QNativeInterface::QX11Application>())
+      {
+        auto win_id = windowHandle() ? windowHandle()->winId() : 0;
+        m_xrr_config = std::make_unique<X11Utils::XRRConfiguration>(x11->display(), win_id);
+      }
     }
 #endif
     m_settings_window = new SettingsWindow(this);
