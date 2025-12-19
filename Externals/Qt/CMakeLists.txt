@@ -17,12 +17,10 @@ else()
     set(QT_USE_CCACHE OFF)
 endif()
 
-# - We don't build Qt statically to avoid issues with conflicting symbols 
-#   (e.g. Qt uses VMA and exports its symbols) which conflicts with Dolphin's own usage of VMA.
-#   TODO: -DFEATURE_vulkan?
-# - Ninja is used as the generator since Qt officially supports it best, and Visual Studio 18 2026 currently doesn't work.
+# Ninja is used as the generator since Qt officially supports it best, and Visual Studio 18 2026 currently doesn't work.
 set(QT_CONFIG_ARG
   -GNinja
+  -DBUILD_SHARED_LIBS=OFF
   -DCMAKE_BUILD_TYPE=Release
   -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
   -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
@@ -38,13 +36,13 @@ set(QT_CONFIG_ARG
 
 set(QT_BASE_CONFIG_ARG
   -DFEATURE_network=OFF
-  -DFEATURE_opengl=OFF
   -DFEATURE_printsupport=OFF
   -DFEATURE_sql=OFF
   -DFEATURE_vulkan=OFF
   -DFEATURE_testlib=OFF
   -DFEATURE_xml=OFF
   -DFEATURE_concurrent=OFF
+  -DFEATURE_windeployqt=OFF
   -DFEATURE_androiddeployqt=OFF
   -DFEATURE_qmake=OFF
   -DFEATURE_cxx20=ON
@@ -64,6 +62,7 @@ set(QT_TOOLS_CONFIG_ARG ${QT_CONFIG_ARG} ${QT_BASE_CONFIG_ARG}
 set(QT_BASE_CONFIG_ARG ${QT_CONFIG_ARG} ${QT_BASE_CONFIG_ARG}
   -DFEATURE_gui=ON
   -DFEATURE_widgets=ON
+  -DFEATURE_opengl=OFF
   -DINPUT_opengl=no
 )
 
