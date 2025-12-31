@@ -3,7 +3,7 @@ if(POLICY CMP0084)
   cmake_policy(SET CMP0084 NEW)
 endif()
 
-if (MSVC)
+if (WIN32)
   if(_M_ARM_64)
     list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/Externals/Qt/Qt6.5.1/ARM64")
   else()
