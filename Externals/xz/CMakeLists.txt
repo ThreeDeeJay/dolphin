@@ -1,0 +1,16 @@
+set(BUILD_SHARED_LIBS OFF)
+set(XZ_NLS OFF)
+set(XZ_TOOL_XZDEC OFF)
+set(XZ_TOOL_LZMADEC OFF)
+set(XZ_TOOL_LZMAINFO OFF)
+set(XZ_TOOL_XZ OFF)
+set(XZ_TOOL_SYMLINKS OFF)
+set(XZ_TOOL_SYMLINKS_LZMA OFF)
+set(XZ_TOOL_SCRIPTS OFF)
+set(XZ_DOC OFF)
+
+add_subdirectory(xz EXCLUDE_FROM_ALL)
+target_include_directories(liblzma PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/xz/src/liblzma/api>)
+
+dolphin_disable_warnings(liblzma)
+add_library(LibLZMA::LibLZMA ALIAS liblzma)

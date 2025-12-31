@@ -667,7 +667,7 @@ dolphin_find_optional_system_library_pkgconfig(xxhash libxxhash>=0.8.2 xxhash::x
 
 dolphin_find_optional_system_library(BZip2 Externals/bzip2)
 
-dolphin_find_optional_system_library(LibLZMA Externals/liblzma)
+dolphin_find_optional_system_library(LibLZMA Externals/xz)
 # Imported target added in CMake 3.14
 dolphin_make_imported_target_if_missing(LibLZMA::LibLZMA LIBLZMA)
 

@@ -34,8 +34,8 @@ Dolphin includes or links code of the following third-party software projects:
    [GPLv3+](http://git.savannah.gnu.org/gitweb/?p=libcdio.git;a=blob_plain;f=COPYING)
 - [libiconv](https://www.gnu.org/software/libiconv/):
    [LGPLv2.1+](http://git.savannah.gnu.org/cgit/libiconv.git/tree/COPYING.LIB)
-- [liblzma](https://tukaani.org/xz/):
-   [Public domain](https://git.tukaani.org/?p=xz.git;a=blob_plain;f=COPYING;hb=HEAD)
+- [xz](https://tukaani.org/xz/):
+   [0BSD](https://github.com/tukaani-project/xz/blob/master/COPYING)
 - [libspng](https://github.com/randy408/libspng):
    [BSD 2-Clause](https://github.com/randy408/libspng/blob/master/LICENSE)
 - [libusb](http://libusb.info/):

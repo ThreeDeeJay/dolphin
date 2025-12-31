@@ -134,3 +134,7 @@
 	path = Externals/Qt
 	url = https://github.com/JoshuaVandaele/ext-win-qt.git
 	shallow = true
+[submodule "Externals/xz/xz"]
+	path = Externals/xz/xz
+	url = https://github.com/tukaani-project/xz.git
+	shallow = true
