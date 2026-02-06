@@ -6,11 +6,8 @@ env:
   Branch: ${{github.ref_name}}
   Platform: x64
   Configuration: Release
-  Artifacts: build/Release
+  Artifacts: Binary\x64\Release
   Title: Dolphin
-  Executable: ${{github.event.repository.name}}.exe # *
-#  DXSDK_DIR: C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\
-#  VULKAN_VERSION: 1.1.130.0
 
 on:
   push:
@@ -35,81 +32,6 @@ jobs:
         echo "CommitCount=$(git rev-list --count HEAD)" >> $env:GITHUB_ENV
         echo "CommitDate=$(git show -s --date=format:'%Y-%m-%d' --format=%cd)" >> $env:GITHUB_ENV
 
-#    - name: Install Windows 8.1 SDK
-#      shell: powershell
-#      run: |
-#        Invoke-WebRequest -Method Get -Uri https://go.microsoft.com/fwlink/p/?LinkId=323507 -OutFile sdksetup.exe -UseBasicParsing
-#        Start-Process -Wait sdksetup.exe -ArgumentList "/q", "/norestart", "/features", "OptionId.WindowsDesktopSoftwareDevelopmentKit", "OptionId.NetFxSoftwareDevelopmentKit"
-
-#    - name: Install .NET Framework 4.6.1 Developer Pack
-#      shell: powershell
-#      run: |
-#        Invoke-WebRequest -Method Get -Uri https://go.microsoft.com/fwlink/?linkid=2099470 -OutFile ndp461-devpack-kb3105179-enu.exe -UseBasicParsing
-#        Start-Process -Wait ./ndp461-devpack-kb3105179-enu.exe -ArgumentList "/Quiet"
-
-#    - name: Cache DirectX SDK
-#      id: DXSDK_Jun10
-#      uses: actions/cache@v4
-#      with:
-#        path: ${{env.DXSDK_DIR}}
-#        key: DXSDK_Jun10
-#    - name: Install DirectX SDK
-#      if: steps.DXSDK_Jun10.outputs.cache-hit != 'true'
-#      shell: powershell
-#      run: |
-#        Invoke-WebRequest -Method Get -Uri https://download.microsoft.com/download/a/e/7/ae743f1f-632b-4809-87a9-aa1bb3458e31/DXSDK_Jun10.exe -OutFile DXSDK_Jun10.exe -UseBasicParsing
-#        Start-Process -Wait ./DXSDK_Jun10.exe -ArgumentList "/U"
-#    - name: Set DXSDK_DIR
-#      run: echo "DXSDK_DIR=C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\" >> $env:GITHUB_ENV
-# NOTE: STORING CACHE REQUIRES THE RUN TO SUCCEED, SO IF IT'S FAILING, TRY TEMPORARILY REMOVING ALL THE STEPS BELOW THIS LINE
-
-#    - name: Cache Vulkan SDK
-#      id: cache-vulkan-sdk
-#      uses: actions/cache@v5
-#      with:
-#        path: "C:\\VulkanSDK\\${{env.VULKAN_VERSION}}"
-#        key: VulkanSDK
-#    - name: Install Vulkan SDK
-#      if: steps.cache-vulkan-sdk.outputs.cache-hit != 'true'
-#      shell: powershell
-#      run: |
-#        echo "VULKAN_SDK=C:\VulkanSDK\${{env.VULKAN_VERSION}}" >> $env:GITHUB_ENV
-#        Invoke-WebRequest -Method Get -Uri https://web.archive.org/web/20200413110014if_/https://sdk.lunarg.com/sdk/download/${{env.VULKAN_VERSION}}/windows/VulkanSDK-${{env.VULKAN_VERSION}}-Installer.exe -OutFile VulkanSDK.exe -UseBasicParsing
-#        Start-Process -Wait ./VulkanSDK.exe -ArgumentList "/S", "--accept-licenses", "--default-answer", "--confirm-command install", "com.lunarg.vulkan.sdl2", "com.lunarg.vulkan.glm"
-# NOTE: STORING CACHE REQUIRES THE RUN TO SUCCEED, SO IF IT'S FAILING, TRY TEMPORARILY REMOVING ALL THE STEPS BELOW THIS LINE
-
-#    - name: Install TortoiseSVN
-#      run: |
-#        curl -L https://cfhcable.dl.sourceforge.net/project/tortoisesvn/1.14.9/Application/TortoiseSVN-1.14.9.29743-x64-svn-1.14.5.msi?viasf=1 -o "TortoiseSVN.msi"
-#        Start-Process -Wait "msiexec" -ArgumentList "/package", "TortoiseSVN.msi", "/quiet"
-
-#    - name: Install Qt
-#      uses: jurplel/install-qt-action@v4
-#      with:
-#        version: '6.6.0'
-#        host: 'windows'
-#        target: 'desktop'
-#        arch: 'win64_msvc2019_64'
-#        modules: 'addons.qtmultimedia'
-
-#    - name: Install Python 2.6
-#      shell: powershell
-#      run: |
-#        Invoke-WebRequest -Method Get -Uri https://www.python.org/ftp/python/2.6.6/python-2.6.6.msi -OutFile python.msi -UseBasicParsing
-#        Start-Process -Wait ./python.msi -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1"
-#        python --version
-#        $Env:Path = "C:\Python26;" + $Env:Path
-#        python --version
-# NOTE: ADD THE LAST 3 LINES ABOVE RIGHT BEFORE MSBUILD IN THE BUILD STEP TO SWITCH AND CHECK PYTHON VERSION
-
-#    - name: Install vcpkg
-#      uses: lukka/run-vcpkg@v11.5
-#      with:
-#        vcpkgGitCommitId: c2aeddd80357b17592e59ad965d2adf65a19b22f
-#    - name: Install dependencies
-#      run: |
-#        vcpkg install
-
     - name: Configure
       run: cmake -A "${{env.Platform}}" -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.Configuration}} #-DCMAKE_PREFIX_PATH=vcpkg\installed\x64-windows
 
@@ -118,16 +40,6 @@ jobs:
 
     - name: List files
       run: ls -R
-
-#    - name: Deploy - Qt
-#      run: |
-#        windeployqt.exe "${{github.workspace}}/${{env.Artifacts}}/${{env.Executable}}"
-
-#      - name: Deploy - vcpkg
-#        shell: cmd
-#        run: |
-#          If exist "vcpkg_installed\${{env.Platform}}-windows\bin\*.dll" (copy "vcpkg_installed\${{env.Platform}}-windows\bin\*.dll" "${{env.Artifacts}}")
-#          If exist "vcpkg\installed\${{env.Platform}}-windows\bin\*.dll" (copy "vcpkg\installed\${{env.Platform}}-windows\bin\*.dll" "${{env.Artifacts}}")
 
     - name: Upload Installer Artifact to GitHub
       uses: actions/upload-artifact@v4
