@@ -7,6 +7,7 @@ env:
   Platform: x64
   Configuration: Release
   Artifacts: Binary\x64\Release
+  Executable: Dolphin.exe
   Title: Dolphin
 
 on:
@@ -31,12 +32,25 @@ jobs:
         echo "CommitHashShort=$(git rev-parse --short=7 HEAD)" >> $env:GITHUB_ENV
         echo "CommitCount=$(git rev-list --count HEAD)" >> $env:GITHUB_ENV
         echo "CommitDate=$(git show -s --date=format:'%Y-%m-%d' --format=%cd)" >> $env:GITHUB_ENV
+ 
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.6.0'
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_msvc2019_64'
+        modules: 'addons.qtmultimedia'
 
     - name: Configure
       run: cmake -A "${{env.Platform}}" -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.Configuration}} #-DCMAKE_PREFIX_PATH=vcpkg\installed\x64-windows
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --config ${{env.Configuration}}
+
+    - name: Deploy - Qt
+      run: |
+        windeployqt.exe "${{github.workspace}}/${{env.Artifacts}}/${{env.Executable}}"
 
     - name: List files
       run: ls -R
