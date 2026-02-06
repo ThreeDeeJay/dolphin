@@ -1,14 +1,13 @@
-#Template from: https://github.com/ThreeDeeJay/GitHub-Actions-build-templates/blob/main/Windows-MSBuild.yml
+#Template from: https://github.com/ThreeDeeJay/GitHub-Actions-build-templates/blob/main/Windows-CMake.yml
 name: Build
 
 env:
   GH_TOKEN: ${{github.token}}
   Branch: ${{github.ref_name}}
-  Platform: #Any CPU|Win32|x86|x64 - Check .sln file for available ones
+  Platform: Any CPU #Win32|x86|x64 - Check .sln file for available ones
   Configuration: Release
   Artifacts: build/Release
   Title: Dolphin
-  Solution: Source/dolphin-emu.sln
   Executable: ${{github.event.repository.name}}.exe # *
 #  DXSDK_DIR: C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\
 #  VULKAN_VERSION: 1.1.130.0
@@ -22,11 +21,11 @@ on:
 
 jobs:
   Windows:
-    runs-on: windows-2025
+    runs-on: windows-2022
     steps:
 
     - name: Clone repo and submodules
-      run: git clone --recurse-submodules https://${{github.repository_owner}}:${{github.token}}@github.com/${{github.repository}}.git "${{github.workspace}}" --branch ${{env.Branch}}
+      run: git clone https://${{github.repository_owner}}:${{github.token}}@github.com/${{github.repository}}.git "${{github.workspace}}" --branch ${{env.Branch}} --depth 1 --recurse-submodules
 
     - name: Get current date, commit hash and count
       run: |
@@ -103,20 +102,19 @@ jobs:
 #        python --version
 # NOTE: ADD THE LAST 3 LINES ABOVE RIGHT BEFORE MSBUILD IN THE BUILD STEP TO SWITCH AND CHECK PYTHON VERSION
 
-    - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v1.0.2
+#    - name: Install vcpkg
+#      uses: lukka/run-vcpkg@v11.5
+#      with:
+#        vcpkgGitCommitId: c2aeddd80357b17592e59ad965d2adf65a19b22f
+#    - name: Install dependencies
+#      run: |
+#        vcpkg install
 
-    - name: Restore NuGet packages
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: nuget restore "${{env.Solution}}"
+    - name: Configure
+      run: cmake -A "${{env.Platform}}" -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.Configuration}} #-DCMAKE_PREFIX_PATH=vcpkg\installed\x64-windows
 
     - name: Build
-      run: msbuild /m "${{env.Solution}}" /p:Configuration="${{env.Configuration}}" /p:PlatformToolset=v143 #/p:Platform="${{env.Platform}}" /p:IncludePath="C:\Path\to\Include" /p:LibPath="C:\Path\to\Lib" /p:AdditionalIncludePaths="C:\Path\to\external\include" /p:AdditionalLibraryDirectories="C:\Path\to\external\lib" /p:AdditionalDependencies=file.lib /p:LanguageStandard="stdcpp17"
-
-#    - name: Meson Build
-#      uses: BSFishy/meson-build@v1.0.3
-#      with:
-#        action: build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.Configuration}}
 
     - name: List files
       run: ls -R
