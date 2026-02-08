@@ -6,7 +6,7 @@ env:
   Branch: ${{github.ref_name}}
   Platform: x64
   Configuration: Release
-  Artifacts: Binary\x64\Release
+  Artifacts: ${{github.workspace}} #Binary\x64\Release
   Executable: Dolphin.exe
   Title: Dolphin
 
