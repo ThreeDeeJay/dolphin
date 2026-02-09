@@ -6,7 +6,7 @@ env:
   Branch: ${{github.ref_name}}
   Platform: x64
   Configuration: Release
-  Artifacts: ${{github.workspace}} #Binary\x64\Release
+  Artifacts: Binary\x64\Release #${{github.workspace}}
   Executable: Dolphin.exe
   Title: Dolphin
 
@@ -64,9 +64,9 @@ jobs:
     - name: Compress artifacts
       run: |
         mkdir Release
-        7z a "Release/${{env.Title}}.zip" "${{github.workspace}}/${{env.Artifacts}}/*" -mx=9
+        7z a "Release/${{env.Title}}.zip" "${{github.workspace}}/*" -mx=9
         cp "Release/${{env.Title}}.zip" "Release/${{env.Title}}_r${{env.CommitCount}}@${{env.CommitHashShort}}.zip"
-
+#7z a "Release/${{env.Title}}.zip" "${{github.workspace}}/${{env.Artifacts}}/*" -mx=9
     - name: Purge tag - latest-${{env.Branch}}
       run: |
         gh release delete latest-${{env.Branch}} --repo ${{github.repository}} --cleanup-tag --yes || true
